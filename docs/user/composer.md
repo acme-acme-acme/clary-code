@@ -272,3 +272,21 @@ automatically. HTML previews cannot access your T3 Code session.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.
+
+## Code intelligence
+
+On web and desktop, workspace files in the editor and the files in the diff panel get
+language features from the environment's machine, so they also work when you connect
+remotely. Hover a symbol for its type, documentation, and any problems on that line.
+Hold Cmd (Ctrl on Windows and Linux) and click to go to a definition, or press F12; press
+Shift+F12 to find references. In the editor you also get completions (Ctrl+Space),
+signature help, and formatting (Shift+Alt+F), and the back and forward buttons return you
+through the places you jumped to.
+
+TypeScript, JavaScript, JSON, and Python work without installing anything. Rust and
+Protobuf use rust-analyzer and the Buf CLI when they are installed on the environment's
+machine. In **Settings → Code Intelligence** you can see which language servers each
+environment found, turn a language off, or point one at a specific command.
+
+Diffs show intelligence for the current version of each file. Lines that no longer match
+the file on disk, such as an earlier turn's changes, show no types rather than wrong ones.
