@@ -1,0 +1,128 @@
+name: Sync upstream
+
+# Rebases the Otter Code commits on `main` onto the latest upstream T3 Code ref every
+# morning at 08:00 Europe/Berlin, then cuts a nightly release when upstream moved.
+#
+# `upstream-base` records the upstream commit the Otter Code commits currently sit on.
+# Upstream PR branches are force-pushed, so the replay range must come from this
+# ref rather than from a merge base. Set the `UPSTREAM_REF` repository variable to
+# `refs/heads/main` once pingdotgg/t3code#2829 merges.
+
+on:
+  schedule:
+    # Both UTC hours cover 08:00 Berlin across daylight saving; the job skips the other one.
+    - cron: "0 6,7 * * *"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Dispatch a nightly release even when upstream did not move"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UPSTREAM_REPOSITORY: pingdotgg/t3code
+      UPSTREAM_REF: ${{ vars.UPSTREAM_REF || 'refs/pull/2829/head' }}
+    steps:
+      - name: Check Berlin time
+        id: gate
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" && "$(TZ=Europe/Berlin date +%H)" != "08" ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Pushing rewritten workflow files needs the `workflows` permission, which
+      # GITHUB_TOKEN never has.
+      - name: Create release app token
+        if: steps.gate.outputs.run == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Rebase onto upstream
+        if: steps.gate.outputs.run == 'true'
+        id: rebase
+        run: |
+          git config user.name "otter-code-release[bot]"
+          git config user.email "otter-code-release[bot]@users.noreply.github.com"
+          git fetch --no-tags origin upstream-base
+          old_base="$(git rev-parse origin/upstream-base)"
+          git fetch --no-tags "https://github.com/${UPSTREAM_REPOSITORY}.git" "${UPSTREAM_REF}"
+          new_base="$(git rev-parse FETCH_HEAD)"
+          echo "old_base=$old_base" >> "$GITHUB_OUTPUT"
+          echo "new_base=$new_base" >> "$GITHUB_OUTPUT"
+          if [[ "$old_base" == "$new_base" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream is still at $new_base."
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          # The generated CI commit is regenerated below instead of replayed.
+          relabel_subject="chore(otter): adapt upstream files (generated)"
+          if [[ "$(git log -1 --format=%s)" == "$relabel_subject" ]]; then
+            git reset -q --hard HEAD~1
+          fi
+          echo "Otter Code commits being replayed:"
+          git log --oneline "$old_base..HEAD"
+          if ! git rebase --onto "$new_base" "$old_base" main; then
+            git status --short | head -50 > "$RUNNER_TEMP/conflicts.txt"
+            git rebase --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          .github/scripts/otter-adapt-upstream.sh
+          if ! git diff --quiet; then
+            git commit -qam "$relabel_subject"
+          fi
+
+      - name: Push rebased main
+        if: steps.gate.outputs.run == 'true' && steps.rebase.outputs.changed == 'true'
+        run: |
+          git push --force-with-lease=main:origin/main origin HEAD:main
+          git push --force origin "${{ steps.rebase.outputs.new_base }}:refs/heads/upstream-base"
+
+      - name: Dispatch nightly release
+        if: steps.gate.outputs.run == 'true' && (steps.rebase.outputs.changed == 'true' || inputs.release)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f channel=nightly
+
+      - name: Report conflict
+        if: failure() && steps.rebase.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          title="Upstream sync conflict"
+          body="$(printf 'Rebasing the Otter Code commits from `%s` onto `%s` (%s) conflicted.\n\nResolve locally with `git rebase --onto %s %s main`, push `main`, then move `upstream-base` to `%s`.\n\nRun: %s\n\n```\n%s\n```' \
+            "${{ steps.rebase.outputs.old_base }}" "${{ steps.rebase.outputs.new_base }}" "$UPSTREAM_REF" \
+            "${{ steps.rebase.outputs.new_base }}" "${{ steps.rebase.outputs.old_base }}" "${{ steps.rebase.outputs.new_base }}" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "$(cat "$RUNNER_TEMP/conflicts.txt")")"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
