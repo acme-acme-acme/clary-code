@@ -31,6 +31,8 @@ interface DiffFileTreeProps {
    */
   readonly selectedPath?: string | null;
   readonly revealRequestId?: number;
+  /** Files the reader marked viewed, checked off in the tree and counted in the header. */
+  readonly viewedPaths?: ReadonlySet<string>;
   readonly ariaLabel: string;
   /** Right-aligned content in the header row, after the file count. */
   readonly headerAccessory?: ReactNode;
@@ -43,11 +45,14 @@ interface DiffFileTreeProps {
  * A directory tree of the files in a diff. Every directory starts open: a diff is a short list
  * compared to a workspace, and the reader came for the files, not the folders.
  */
+const EMPTY_VIEWED_PATHS: ReadonlySet<string> = new Set();
+
 export function DiffFileTree({
   entries,
   onSelectFile,
   selectedPath = null,
   revealRequestId = 0,
+  viewedPaths = EMPTY_VIEWED_PATHS,
   ariaLabel,
   headerAccessory,
   footer,
@@ -70,6 +75,10 @@ export function DiffFileTree({
     () => entries.map((entry) => ({ path: entry.path, status: entry.status })),
     [entries],
   );
+  const viewedCount = useMemo(
+    () => paths.filter((path) => viewedPaths.has(path)).length,
+    [paths, viewedPaths],
+  );
   const filePathsRef = useRef<ReadonlySet<string>>(new Set(paths));
   const onSelectFileRef = useRef(onSelectFile);
   // Selection driven by `selectedPath` below is an echo of a file already on screen, not a
@@ -77,6 +86,8 @@ export function DiffFileTree({
   const syncingSelectionRef = useRef(false);
   const handledRevealRef = useRef<{ path: string; revealRequestId: number } | null>(null);
   const mountedPathsRef = useRef<ReadonlyArray<string> | null>(null);
+  // The tree reads decorations when it renders a row, so it sees the latest set through a ref.
+  const viewedPathsRef = useRef(viewedPaths);
 
   useEffect(() => {
     filePathsRef.current = new Set(paths);
@@ -94,6 +105,10 @@ export function DiffFileTree({
       if (path && filePathsRef.current.has(path)) onSelectFileRef.current(path);
     },
     paths: [],
+    renderRowDecoration: ({ item }) =>
+      item.kind === "file" && viewedPathsRef.current.has(item.path)
+        ? { text: "✓", title: "Viewed" }
+        : null,
     search: false,
     sort: ordering.sort,
     unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
@@ -128,6 +143,13 @@ export function DiffFileTree({
     }
     model.setGitStatus(gitStatus);
   }, [directoryPaths, gitStatus, model, ordering, paths, positions]);
+
+  useEffect(() => {
+    if (viewedPathsRef.current === viewedPaths) return;
+    viewedPathsRef.current = viewedPaths;
+    // Setting the status re-renders the visible rows, which picks up the new decorations.
+    model.setGitStatus(gitStatus);
+  }, [gitStatus, model, viewedPaths]);
 
   useEffect(() => {
     if (selectedPath === null) {
@@ -170,7 +192,9 @@ export function DiffFileTree({
         data-surface-subheader
       >
         <span className="px-1 font-medium text-foreground">Files</span>
-        <span className="ml-auto tabular-nums">{entries.length}</span>
+        <span className="ml-auto tabular-nums">
+          {viewedCount > 0 ? `${viewedCount}/${entries.length} viewed` : entries.length}
+        </span>
         {headerAccessory}
         {directoryPaths.length > 0 ? (
           <Tooltip>
