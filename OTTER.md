@@ -6,13 +6,15 @@ different and how to keep the fork aligned with upstream.
 
 ## How the fork stays in sync
 
-- `main` is the upstream commit recorded in the `upstream-base` branch plus exactly three commits,
-  in this order:
+- `main` is the upstream commit recorded in the `upstream-base` branch plus these commits, in this
+  order:
   1. `chore(otter): brand fork as Otter Code`: names, IDs, domains, icons, relay values, this file,
      and `scripts/otter/`.
   2. `ci(otter): release Otter Code and sync upstream daily`: release gating and
      `.github/workflows/otter-sync-upstream.yml`.
-  3. `chore(otter): adapt upstream files (generated)`: output of `.github/scripts/otter-adapt-upstream.sh`.
+  3. `feat(otter): Linear integration`: linked Linear issues and the Linear agent app (see
+     [Linear agent app](#linear-agent-app)). Fork-only features go here, one commit per feature.
+  4. `chore(otter): adapt upstream files (generated)`: output of `.github/scripts/otter-adapt-upstream.sh`.
      Never edit it by hand. The sync drops and regenerates it after every rebase, so noisy
      line-level edits to upstream files (runner labels, skipped Windows jobs, the pointer in
      `AGENTS.md`) never conflict.
@@ -143,6 +145,21 @@ Deliberately not copied:
   compatibility flag (`infra/relay/src/worker.ts`), because tunnels share the relay's zone.
   Without it, the relay's calls to a tunnel fail with Cloudflare 530 and phones report
   `endpoint_request_failed`.
+
+## Linear agent app
+
+Delegating Linear issues to Otter needs one Linear OAuth app owned by Otter, configured on the relay.
+Without it the relay reports Linear as unavailable and clients hide the section.
+
+- Create the app at `linear.app/settings/api/applications/new` with distribution **public**, callback
+  URL `https://relay.otterware.dev/v1/linear/oauth/callback`, webhooks on, webhook URL
+  `https://relay.otterware.dev/v1/linear/webhook`, and the **Agent session events** and
+  **OAuth app revoked** categories.
+- Store the client ID as the `LINEAR_CLIENT_ID` repository variable, and the client secret and webhook
+  signing secret as the `LINEAR_CLIENT_SECRET` and `LINEAR_WEBHOOK_SECRET` secrets in the `production`
+  environment. `HOSTED_APP_URL` is optional and defaults to `https://code.otterware.dev`.
+- The relay generates its own keys for sealing Linear tokens and signing OAuth state. Rotating them
+  forces every workspace to reinstall and every user to relink.
 
 ## Other traps
 
