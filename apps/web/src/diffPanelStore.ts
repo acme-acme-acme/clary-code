@@ -12,15 +12,20 @@ export type DiffPanelSelection =
   | { kind: "commit"; sha: string }
   | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
 
-const DEFAULT_SELECTION: DiffPanelSelection = { kind: "unstaged" };
+const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
 
 interface DiffPanelStoreState {
   byThreadKey: Record<string, DiffPanelSelection>;
   branchBaseRefByThreadKey: Record<string, string | null>;
+  /** Session only: the file open in the one-file view, by thread, with the scope it belongs to. */
+  openFileByThreadKey: Record<string, { scope: string; path: string }>;
   /** Files the reader marked viewed, by thread, then review section, then path. */
   viewedByThreadKey: Record<string, Record<string, Record<string, DiffViewedMark>>>;
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
+  /** Changes the comparison target without leaving the current scope. */
+  setBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
+  openFile: (ref: ScopedThreadRef, scope: string, path: string) => void;
   selectTurn: (ref: ScopedThreadRef, turnId: RunId, filePath?: string) => void;
   selectCommit: (ref: ScopedThreadRef, sha: string) => void;
   reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
@@ -43,6 +48,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     (set) => ({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
+      openFileByThreadKey: {},
       viewedByThreadKey: {},
       selectGitScope: (ref, scope) =>
         set((state) => {
@@ -81,6 +87,32 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             },
           };
         }),
+      setBaseRef: (ref, baseRef) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const normalizedBaseRef = normalizeBaseRef(baseRef);
+          const previous = state.byThreadKey[threadKey];
+          return {
+            byThreadKey:
+              previous?.kind === "branch" || previous === undefined
+                ? {
+                    ...state.byThreadKey,
+                    [threadKey]: { kind: "branch", baseRef: normalizedBaseRef },
+                  }
+                : state.byThreadKey,
+            branchBaseRefByThreadKey: {
+              ...state.branchBaseRefByThreadKey,
+              [threadKey]: normalizedBaseRef,
+            },
+          };
+        }),
+      openFile: (ref, scope, path) =>
+        set((state) => ({
+          openFileByThreadKey: {
+            ...state.openFileByThreadKey,
+            [scopedThreadKey(ref)]: { scope, path },
+          },
+        })),
       selectCommit: (ref, sha) =>
         set((state) => ({
           byThreadKey: { ...state.byThreadKey, [scopedThreadKey(ref)]: { kind: "commit", sha } },
@@ -141,6 +173,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
           if (
             !(threadKey in state.byThreadKey) &&
             !(threadKey in state.branchBaseRefByThreadKey) &&
+            !(threadKey in state.openFileByThreadKey) &&
             !(threadKey in state.viewedByThreadKey)
           ) {
             return state;
@@ -148,8 +181,10 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
           const { [threadKey]: _removed, ...byThreadKey } = state.byThreadKey;
           const { [threadKey]: _removedBaseRef, ...branchBaseRefByThreadKey } =
             state.branchBaseRefByThreadKey;
+          const { [threadKey]: _removedOpenFile, ...openFileByThreadKey } =
+            state.openFileByThreadKey;
           const { [threadKey]: _removedViewed, ...viewedByThreadKey } = state.viewedByThreadKey;
-          return { byThreadKey, branchBaseRefByThreadKey, viewedByThreadKey };
+          return { byThreadKey, branchBaseRefByThreadKey, openFileByThreadKey, viewedByThreadKey };
         }),
     }),
     {
