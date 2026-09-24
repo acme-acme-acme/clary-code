@@ -46,6 +46,8 @@ jobs:
       APNS_TEAM_ID: ${{ vars.APNS_TEAM_ID }}
       APNS_KEY_ID: ${{ vars.APNS_KEY_ID }}
       APNS_BUNDLE_ID: ${{ vars.APNS_BUNDLE_ID }}
+      LINEAR_CLIENT_ID: ${{ vars.LINEAR_CLIENT_ID }}
+      HOSTED_APP_URL: ${{ vars.HOSTED_APP_URL }}
       ALCHEMY_TELEMETRY_DISABLED: "1"
     steps:
       - name: Checkout
@@ -78,6 +80,8 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+          LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
+          LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
 
       - name: Publish relay deploy commit status
         uses: actions/github-script@v8

@@ -11,6 +11,10 @@ export const RELAY_MINT_RESPONSE_TYP = "t3-env-mint+jwt";
 export const RELAY_HEALTH_RESPONSE_TYP = "t3-env-health+jwt";
 export const RELAY_ACTIVITY_PUBLISH_TYP = "t3-env-activity+jwt";
 export const RELAY_MANAGED_TUNNEL_RECOVERY_TYP = "t3-env-managed-tunnel-recovery+jwt";
+export const RELAY_LINEAR_SESSION_REQUEST_TYP = "t3-cloud-linear-session+jwt";
+export const RELAY_LINEAR_SESSION_RESPONSE_TYP = "t3-env-linear-session+jwt";
+export const RELAY_LINEAR_PROMPT_REQUEST_TYP = "t3-cloud-linear-prompt+jwt";
+export const RELAY_LINEAR_CHANGES_REQUEST_TYP = "t3-cloud-linear-changes+jwt";
 
 export class RelayJwtError extends Schema.TaggedError<RelayJwtError>()("RelayJwtError", {
   operation: Schema.Literals(["sign", "verify"]),

@@ -1923,6 +1923,91 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("links, syncs, and unlinks Linear issues through rebuilds", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* OrchestratorV2;
+      const maintenance = yield* ProjectionMaintenanceV2;
+      const threadId = ThreadId.make("runtime-linear-issues");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("linear-create"),
+        threadId,
+        projectId: ProjectId.make("linear-project"),
+        title: "Linear",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      for (const [index, identifier] of ["eng-12", "ENG-12", "OPS-3"].entries()) {
+        yield* orchestrator.dispatch({
+          type: "thread.linear-issue.link",
+          commandId: CommandId.make(`linear-link-${index}`),
+          threadId,
+          identifier,
+          url: `https://linear.app/issue/${identifier}`,
+          source: "manual",
+        });
+      }
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.linearIssues?.map(
+          (link) => link.identifier,
+        ),
+        ["ENG-12", "OPS-3"],
+      );
+
+      // The issue moved teams: the sync carries its new identifier, and the
+      // stable issue id keeps later syncs attached to the same link.
+      const snapshot = {
+        identifier: "CORE-40",
+        title: "Fix login",
+        state: { name: "In Progress", type: "started" as const, color: "#f2c94c" },
+        assignee: "Ada",
+        updatedAt: "2026-09-24T10:00:00.000Z",
+        syncedAt: "2026-09-24T10:01:00.000Z",
+      };
+      yield* orchestrator.dispatch({
+        type: "thread.linear-issue-link.sync",
+        commandId: CommandId.make("linear-sync-1"),
+        threadId,
+        identifier: "ENG-12",
+        issueId: "issue-uuid-12",
+        url: "https://linear.app/acme/issue/CORE-40/fix-login",
+        snapshot,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.linear-issue-link.sync",
+        commandId: CommandId.make("linear-sync-2"),
+        threadId,
+        identifier: "CORE-40",
+        issueId: "issue-uuid-12",
+        url: "https://linear.app/acme/issue/CORE-40/fix-login",
+        snapshot: { ...snapshot, state: { name: "Done", type: "completed", color: "#5e6ad2" } },
+      });
+      const synced = (yield* orchestrator.getThreadShell(threadId))?.linearIssues?.[0];
+      assert.equal(synced?.identifier, "CORE-40");
+      assert.equal(synced?.issueId, "issue-uuid-12");
+      assert.equal(synced?.snapshot?.state.name, "Done");
+
+      yield* orchestrator.dispatch({
+        type: "thread.linear-issue.unlink",
+        commandId: CommandId.make("linear-unlink"),
+        threadId,
+        identifier: "ops-3",
+      });
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.linearIssues?.map(
+          (link) => link.identifier,
+        ),
+        ["CORE-40"],
+      );
+    }),
+  );
+
   it.effect("persists rejected command receipts across retries", () =>
     Effect.gen(function* () {
       const orchestrator = yield* OrchestratorV2;

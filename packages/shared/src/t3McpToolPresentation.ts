@@ -93,6 +93,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "list-prs",
     "pull-request",
   ),
+  link_linear_issue: tool(["Link", "Linking", "Linked", "a Linear issue"], "thread-update"),
+  unlink_linear_issue: tool(["Unlink", "Unlinking", "Unlinked", "a Linear issue"], "thread-update"),
+  list_thread_linear_issues: tool(
+    ["Check", "Checking", "Checked", "linked Linear issues"],
+    "thread-read",
+  ),
   orchestrator_capabilities: tool(
     ["Get", "Getting", "Got", "orchestration capabilities"],
     "capabilities",

@@ -417,6 +417,33 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("keeps the Linear API key out of the settings file and away from clients", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+
+        yield* serverSettings.updateSettings({ linear: { apiKey: "lin_api_secret" } });
+        const onDisk = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        assert.notInclude(onDisk, "lin_api_secret");
+        const current = yield* serverSettings.getSettings;
+        assert.equal(current.linear.apiKey, "lin_api_secret");
+        assert.notEqual(
+          ServerSettingsModule.redactServerSettingsForClient(current).linear.apiKey,
+          "lin_api_secret",
+        );
+
+        // A client echoing the redaction marker keeps the key; an empty value clears it.
+        const marker = ServerSettingsModule.redactServerSettingsForClient(current).linear.apiKey;
+        yield* serverSettings.updateSettings({ linear: { apiKey: marker } });
+        assert.equal((yield* serverSettings.getSettings).linear.apiKey, "lin_api_secret");
+        yield* serverSettings.updateSettings({ linear: { apiKey: "" } });
+        assert.equal((yield* serverSettings.getSettings).linear.apiKey, "");
+      }),
+    ).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("persists and broadcasts thread settlement settings", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -35,6 +35,10 @@ import {
   nativeHeaderScrollEdgeEffects,
 } from "../../../native/StackHeader";
 import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
+import {
+  linearIssueDetail,
+  linearIssueStateColor,
+} from "../../../state/thread-linear-issue-presentation";
 import { useEnvironmentQuery } from "../../../state/query";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
@@ -73,6 +77,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
       ),
     [selectedThread?.pullRequests, supportsLinkedPrSnapshots],
   );
+  const linearIssues = selectedThread?.linearIssues ?? [];
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const theme = useUniwindTheme();
@@ -351,6 +356,40 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
               ))}
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {linearIssues.length > 0 ? (
+        <View className="gap-2">
+          <Text className="px-1 text-xs font-t3-bold text-foreground-muted">Linear issues</Text>
+          <View className="overflow-hidden bg-card android:rounded-[20px] ios:rounded-2xl ios:border ios:border-border ios:px-3 ios:py-1">
+            {linearIssues.map((issue, index) => (
+              <View key={issue.issueId ?? issue.identifier}>
+                {index > 0 && Platform.OS !== "android" ? (
+                  <View className="ml-12 h-px bg-border" />
+                ) : null}
+                <SheetListRow
+                  icon="ticket"
+                  title={
+                    issue.snapshot === null
+                      ? issue.identifier
+                      : `${issue.identifier} ${issue.snapshot.title}`
+                  }
+                  subtitle={linearIssueDetail(issue)}
+                  subtitleDotColor={linearIssueStateColor(issue)}
+                  onPress={() => {
+                    void tryOpenExternalUrl(issue.url, "linear-issue").then((opened) => {
+                      if (!opened)
+                        Alert.alert(
+                          "Unable to open issue",
+                          "The Linear issue could not be opened.",
+                        );
+                    });
+                  }}
+                />
+              </View>
+            ))}
+          </View>
         </View>
       ) : null}
 
