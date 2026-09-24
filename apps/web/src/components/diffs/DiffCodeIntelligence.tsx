@@ -1,4 +1,8 @@
-import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
+import {
+  getFiletypeFromFileName,
+  type FileDiffContentsLoader,
+  type FileDiffMetadata,
+} from "@pierre/diffs";
 import {
   codeLanguageForPath,
   type CodeDiagnostic,
@@ -21,12 +25,19 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { diagnosticsAt, wordAtLine, type CodePosition } from "../files/codeIntelligenceEdits";
 import {
   CODE_POPUP_CLASS,
+  CodeInfoAction,
   CodeInfoCard,
   CodeLocationList,
+  codePopupStyle,
   type CodeInfo,
 } from "../files/codeIntelligencePopups";
 import { CodeLanguageSession } from "../files/codeLanguageSession";
-import { codeLineAtPoint, lineTextRange, popupPosition } from "../files/fileCodeDom";
+import {
+  codeLineAtPoint,
+  lineTextRange,
+  popupPosition,
+  type PopupAnchor,
+} from "../files/fileCodeDom";
 import {
   diagnosticLineSpans,
   diffLineMatches,
@@ -91,7 +102,7 @@ export function DiffCodeIntelligence(props: Props) {
   const [locations, setLocations] = useState<{
     title: string;
     items: ReadonlyArray<CodeLocation>;
-    anchor: { top: number; left: number };
+    anchor: PopupAnchor;
   } | null>(null);
   const command = useAtomCommand(projectEnvironment.language, { reportFailure: false });
   const readFile = useAtomQueryRunner(projectEnvironment.readFile, {
@@ -343,7 +354,7 @@ export function DiffCodeIntelligence(props: Props) {
             display: "",
             documentation: "",
             problems: found,
-            anchor: popupPosition(wordRect(hit), 120),
+            anchor: popupPosition(wordRect(hit), 120, true),
           });
         }, 350);
         return;
@@ -377,7 +388,8 @@ export function DiffCodeIntelligence(props: Props) {
                 documentation: result.info?.documentation ?? "",
                 markdown: result.info?.markdown,
                 problems: found,
-                anchor: popupPosition(wordRect(hit), 180),
+                language: getFiletypeFromFileName(hit.file.filePath),
+                anchor: popupPosition(wordRect(hit), 180, true),
               });
             },
             (cause: unknown) => {
@@ -387,7 +399,7 @@ export function DiffCodeIntelligence(props: Props) {
                 display: "",
                 documentation:
                   cause instanceof Error ? cause.message : "Language features are unavailable.",
-                anchor: popupPosition(wordRect(hit), 120),
+                anchor: popupPosition(wordRect(hit), 120, true),
               });
             },
           );
@@ -527,20 +539,16 @@ export function DiffCodeIntelligence(props: Props) {
           actions={
             info.display || info.documentation ? (
               <>
-                <Button
-                  variant="ghost"
-                  size="xs"
+                <CodeInfoAction
+                  label="Go to Definition"
+                  shortcut="F12"
                   onClick={() => actions.current?.navigate("definition")}
-                >
-                  Go to definition
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
+                />
+                <CodeInfoAction
+                  label="Find References"
+                  shortcut={isMacPlatform(navigator.platform) ? "⇧F12" : "Shift+F12"}
                   onClick={() => actions.current?.navigate("references")}
-                >
-                  Find references
-                </Button>
+                />
               </>
             ) : undefined
           }
@@ -549,11 +557,16 @@ export function DiffCodeIntelligence(props: Props) {
       {locations ? (
         <div
           data-file-code-popup
-          className={`${CODE_POPUP_CLASS} w-96 overflow-hidden text-xs`}
-          style={locations.anchor}
+          className={`${CODE_POPUP_CLASS} w-[480px] text-xs`}
+          style={codePopupStyle(locations.anchor, 480)}
         >
-          <div className="flex items-center justify-between px-3 py-1.5">
-            <span>{locations.title}</span>
+          <div className="flex items-center justify-between border-b border-border py-0.5 pr-1 pl-2">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {locations.title}
+              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
+                {locations.items.length}
+              </span>
+            </span>
             <Button
               variant="ghost"
               size="icon-xs"
