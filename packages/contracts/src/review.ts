@@ -98,6 +98,8 @@ export type ReviewListCommitsInput = typeof ReviewListCommitsInput.Type;
 export const ReviewCommit = Schema.Struct({
   sha: TrimmedNonEmptyString,
   subject: Schema.String,
+  /** Absent on older servers. */
+  authorName: Schema.optionalKey(Schema.String),
   authoredAt: Schema.String,
 });
 export type ReviewCommit = typeof ReviewCommit.Type;
@@ -105,5 +107,9 @@ export type ReviewCommit = typeof ReviewCommit.Type;
 export const ReviewListCommitsResult = Schema.Struct({
   /** Commits on HEAD that are not on the base branch, newest first. */
   commits: Schema.Array(ReviewCommit),
+  /** The base branch the commits were read against. Absent on older servers. */
+  baseRef: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
+  /** More commits exist than the list holds. Absent on older servers. */
+  truncated: Schema.optionalKey(Schema.Boolean),
 });
 export type ReviewListCommitsResult = typeof ReviewListCommitsResult.Type;
