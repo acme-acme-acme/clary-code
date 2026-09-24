@@ -3193,14 +3193,14 @@ describe("computeStableMessagesTimelineRows", () => {
 describe("resolveTimelineToolPresentation", () => {
   it("pretty prints Claude and Cursor T3 MCP tool names", () => {
     expect(resolveTimelineToolPresentation("mcp__t3-code__t3_thread_read")).toEqual({
-      displayName: "Read a T3 thread",
+      displayName: "Read an Otter Code thread",
       logo: "t3-code",
     });
   });
 
   it("pretty prints Codex T3 MCP tool names", () => {
     expect(resolveTimelineToolPresentation("t3-code.create_threads")).toEqual({
-      displayName: "Create T3 threads",
+      displayName: "Create Otter Code threads",
       logo: "t3-code",
     });
   });

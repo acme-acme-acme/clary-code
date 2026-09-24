@@ -154,7 +154,7 @@ export function AgentActivity(
   const deepLinkRow = attentionRow ?? row0;
   const deepLink =
     deepLinkRow && deepLinkRow.deepLink.startsWith("/") && !deepLinkRow.deepLink.startsWith("//")
-      ? `t3code://${deepLinkRow.deepLink.slice(1)}`
+      ? `ottercode://${deepLinkRow.deepLink.slice(1)}`
       : null;
 
   // A scannable status glyph per phase — reads faster than colored words and
@@ -226,17 +226,9 @@ export function AgentActivity(
     </HStack>
   );
 
-  // The branded T3 mark. `assetName` resolves the template image set bundled in
-  // the widget extension's asset catalog. Image views only honor `resizable`
-  // directly (frame/foregroundStyle are dropped), so we size it via a container
-  // frame the resizable image fills and tint it through the container's
-  // foreground style, which the template image inherits. The 3:2 frame matches
-  // the glyph's aspect ratio so it never distorts.
-  const renderLogo = (height: number, color: Foreground) => (
-    <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
-      <Image assetName="T3Mark" modifiers={[resizable()]} />
-    </HStack>
-  );
+  // Fills the island slots that cannot stay empty with the lead agent's status.
+  const renderHeroGlyph = (size: number) =>
+    renderGlyph(phaseSymbol(heroRow?.phase ?? "running"), size, tint);
 
   return {
     banner: (
@@ -250,14 +242,9 @@ export function AgentActivity(
           ...(deepLink ? [widgetURL(deepLink)] : []),
         ]}
       >
-        {/* Logo pinned to the leading edge; the status texts centered across the
-            full width (ZStack so the logo doesn't skew the centering). No footer —
-            overflow beyond the visible rows is inferable from the count. */}
+        {/* Status texts centered across the full width. No footer — overflow
+            beyond the visible rows is inferable from the count. */}
         <ZStack>
-          <HStack spacing={0} alignment="center">
-            {renderLogo(13, primaryForeground)}
-            <Spacer minLength={0} />
-          </HStack>
           <HStack spacing={6} alignment="center">
             <Spacer minLength={0} />
             <Text
@@ -300,7 +287,6 @@ export function AgentActivity(
     bannerSmall: (
       <VStack alignment="leading" spacing={5} modifiers={[padding({ all: 10 })]}>
         <HStack spacing={7} alignment="center">
-          {renderLogo(14, primaryForeground)}
           <Text
             modifiers={[
               font({ weight: "bold", size: 13 }),
@@ -331,7 +317,7 @@ export function AgentActivity(
         ) : null}
       </VStack>
     ),
-    compactLeading: renderLogo(14, tint),
+    compactLeading: renderHeroGlyph(14),
     compactTrailing: (
       <Text modifiers={[font({ weight: "semibold", size: 11 }), foregroundStyle(tint)]}>
         {attentionRow
@@ -341,16 +327,15 @@ export function AgentActivity(
           : activeLabel}
       </Text>
     ),
-    // The shared/minimal form is a ~22pt circle — a single signal reads there,
-    // the wordmark does not. Show the blocking/outcome phase glyph, else the
-    // mark (all-done shows the hero row's checkmark/cross).
+    // The shared/minimal form is a ~22pt circle — a single signal reads there.
+    // Show the blocking/outcome phase glyph in its tint, else the running glyph
+    // (all-done shows the hero row's checkmark/cross).
     minimal:
       (attentionRow || failedRow || allDone) && heroRow
         ? renderGlyph(phaseSymbol(heroRow.phase), 13, phaseTint(heroRow.phase))
-        : renderLogo(11, tint),
+        : renderHeroGlyph(13),
     expandedLeading: (
       <HStack spacing={5} alignment="center" modifiers={[padding({ leading: 4, vertical: 4 })]}>
-        {renderLogo(15, tint)}
         <Text modifiers={[font({ weight: "bold", size: 13 }), foregroundStyle(tint)]}>
           {allDone ? doneLabel : `${props.activeCount}`}
         </Text>
