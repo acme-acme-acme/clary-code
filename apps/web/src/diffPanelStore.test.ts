@@ -11,6 +11,7 @@ describe("diffPanelStore", () => {
     useDiffPanelStore.setState({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
+      openFileByThreadKey: {},
       viewedByThreadKey: {},
     }),
   );
@@ -29,16 +30,34 @@ describe("diffPanelStore", () => {
     expect(useDiffPanelStore.getState().viewedByThreadKey).toEqual({});
   });
 
-  it("defaults each thread to working tree changes without requiring git status", () => {
+  it("defaults each thread to all changes without requiring git status", () => {
     expect(
       selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
-    ).toEqual({ kind: "unstaged" });
+    ).toEqual({ kind: "branch", baseRef: null });
   });
 
-  it("defaults to working tree changes before a thread is selected", () => {
+  it("defaults to all changes before a thread is selected", () => {
     expect(selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, null)).toEqual({
-      kind: "unstaged",
+      kind: "branch",
+      baseRef: null,
     });
+  });
+
+  it("changes the target branch without leaving another scope", () => {
+    const store = useDiffPanelStore.getState();
+    store.selectCommit(THREAD_REF, "abc1234");
+    store.setBaseRef(THREAD_REF, " origin/main ");
+    const state = useDiffPanelStore.getState();
+    expect(selectThreadDiffPanelSelection(state.byThreadKey, THREAD_REF)).toEqual({
+      kind: "commit",
+      sha: "abc1234",
+    });
+    expect(Object.values(state.branchBaseRefByThreadKey)).toEqual(["origin/main"]);
+
+    store.selectGitScope(THREAD_REF, "branch");
+    expect(
+      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
+    ).toEqual({ kind: "branch", baseRef: "origin/main" });
   });
 
   it("preserves an explicit branch selection", () => {
