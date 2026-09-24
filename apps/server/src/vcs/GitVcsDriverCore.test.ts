@@ -1735,11 +1735,15 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["add", "second.ts"]);
         yield* git(cwd, ["commit", "-m", "add second"]);
 
-        const { commits } = yield* driver.listReviewCommits({ cwd, baseRef: initialBranch });
+        const listed = yield* driver.listReviewCommits({ cwd, baseRef: initialBranch });
+        const { commits } = listed;
         assert.deepStrictEqual(
           commits.map((commit) => commit.subject),
           ["add second", "add first"],
         );
+        assert.strictEqual(listed.baseRef, initialBranch);
+        assert.strictEqual(listed.truncated, false);
+        assert.isTrue(commits.every((commit) => (commit.authorName ?? "").length > 0));
         const first = commits[1]!;
 
         const preview = yield* driver.getReviewDiffPreview({
