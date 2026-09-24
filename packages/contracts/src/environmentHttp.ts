@@ -55,6 +55,10 @@ import {
   RelayEnvironmentHealthResponse,
   RelayEnvironmentLinkProof,
   RelayEnvironmentMintResponse,
+  RelayLinearAgentPromptRequest,
+  RelayLinearAgentPromptResponse,
+  RelayLinearAgentSessionRequest,
+  RelayLinearAgentSessionResponse,
   RelayLinkProofRequest,
 } from "./relay.ts";
 
@@ -647,6 +651,20 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     HttpApiEndpoint.post("t3MintCredential", "/api/t3-connect/mint-credential", {
       payload: RelayCloudMintCredentialRequest,
       success: RelayEnvironmentMintResponse,
+      error: EnvironmentHttpCloudErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("linearAgentSession", "/api/t3-connect/linear/agent-session", {
+      payload: RelayLinearAgentSessionRequest,
+      success: RelayLinearAgentSessionResponse,
+      error: EnvironmentHttpCloudErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("linearAgentPrompt", "/api/t3-connect/linear/agent-prompt", {
+      payload: RelayLinearAgentPromptRequest,
+      success: RelayLinearAgentPromptResponse,
       error: EnvironmentHttpCloudErrors,
     }),
   ) {}

@@ -448,6 +448,29 @@ describe("threadPullRequestSearchTerms", () => {
     expect(terms).toContain("#34");
     expect(terms.join(" ")).not.toContain("56");
   });
+
+  it("includes linked Linear issue identifiers and synced titles", () => {
+    const terms = threadPullRequestSearchTerms({
+      linearIssues: [
+        {
+          identifier: "ENG-7",
+          issueId: "issue-7",
+          url: "https://linear.app/acme/issue/ENG-7",
+          source: "manual",
+          linkedAt: "2026-01-01T00:00:00.000Z",
+          snapshot: {
+            identifier: "ENG-7",
+            title: "Flaky checkout",
+            state: { name: "Todo", type: "unstarted", color: "#e2e2e2" },
+            assignee: null,
+            updatedAt: null,
+            syncedAt: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+    expect(terms).toEqual(["ENG-7", "Flaky checkout"]);
+  });
 });
 
 it("searches the legacy projection when old environments decode to an empty links list", () => {
