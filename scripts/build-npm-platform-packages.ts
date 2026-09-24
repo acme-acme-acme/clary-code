@@ -43,8 +43,9 @@ import serverPackageJson from "../apps/server/package.json" with { type: "json" 
 
 import { windowsSystemTar } from "./build-cli-archive.ts";
 
-export const NPM_PLATFORM_PACKAGE_SCOPE = "@t3code";
-export const NPM_LAUNCHER_PACKAGE_NAME = "t3";
+export const NPM_PLATFORM_PACKAGE_SCOPE = "@otterware";
+export const NPM_PLATFORM_PACKAGE_PREFIX = "otter-code-";
+export const NPM_LAUNCHER_PACKAGE_NAME = "otter-code";
 
 const encodePackageJson = Schema.encodeEffect(fromJsonStringPretty(Schema.Unknown));
 
@@ -85,7 +86,7 @@ export class NpmPackagesArchiveLayoutError extends Schema.TaggedError<NpmPackage
 }
 
 export function npmPlatformPackageName(platformKey: CliArchivePlatformKey): string {
-  return `${NPM_PLATFORM_PACKAGE_SCOPE}/t3-${platformKey}`;
+  return `${NPM_PLATFORM_PACKAGE_SCOPE}/${NPM_PLATFORM_PACKAGE_PREFIX}${platformKey}`;
 }
 
 /**
@@ -155,7 +156,7 @@ export function npmPlatformPackageReadme(platformKey: CliArchivePlatformKey): st
   return [
     `# ${npmPlatformPackageName(platformKey)}`,
     "",
-    `The T3 Code CLI executable for ${platformKey}. Do not install this package directly:`,
+    `The Otter Code CLI executable for ${platformKey}. Do not install this package directly:`,
     `it is an optional dependency of \`${NPM_LAUNCHER_PACKAGE_NAME}\`, which picks the package for the`,
     "current platform and runs the executable inside it.",
     "",
@@ -163,7 +164,7 @@ export function npmPlatformPackageReadme(platformKey: CliArchivePlatformKey): st
     `npx ${NPM_LAUNCHER_PACKAGE_NAME}@latest`,
     "```",
     "",
-    "Source and documentation: https://github.com/pingdotgg/t3code",
+    "Source and documentation: https://github.com/acme-acme-acme/otter-code",
     "",
   ].join("\n");
 }
@@ -176,10 +177,10 @@ export function npmLauncherPackageManifest(
   return {
     name: NPM_LAUNCHER_PACKAGE_NAME,
     version,
-    description: "T3 Code CLI. Installs the self-contained executable for this platform.",
+    description: "Otter Code CLI. Installs the self-contained executable for this platform.",
     license: serverPackageJson.license,
     repository: serverPackageJson.repository,
-    bin: { t3: "./bin/t3.js" },
+    bin: { [NPM_LAUNCHER_PACKAGE_NAME]: "./bin/t3.js" },
     files: ["bin", "dist"],
     optionalDependencies: Object.fromEntries(
       platformKeys.map((key) => [npmPlatformPackageName(key), version]),
@@ -203,14 +204,14 @@ const key = process.platform + "-" + process.arch;
 
 let packageDir;
 try {
-  packageDir = dirname(require.resolve("${NPM_PLATFORM_PACKAGE_SCOPE}/t3-" + key + "/package.json"));
+  packageDir = dirname(require.resolve("${NPM_PLATFORM_PACKAGE_SCOPE}/${NPM_PLATFORM_PACKAGE_PREFIX}" + key + "/package.json"));
 } catch {
   process.stderr.write(
     [
-      "t3: no T3 Code CLI build is available for this platform (" + key + ").",
+      "${NPM_LAUNCHER_PACKAGE_NAME}: no Otter Code CLI build is available for this platform (" + key + ").",
       "Supported platforms: " + SUPPORTED.join(", ") + ".",
-      "If yours is listed, reinstall t3 so npm fetches its optional dependency.",
-      "The desktop app and release archives are at https://github.com/pingdotgg/t3code/releases",
+      "If yours is listed, reinstall ${NPM_LAUNCHER_PACKAGE_NAME} so npm fetches its optional dependency.",
+      "The desktop app and release archives are at https://github.com/acme-acme-acme/otter-code/releases",
       "",
     ].join("\\n"),
   );
@@ -220,7 +221,7 @@ try {
 const executable = join(packageDir, process.platform === "win32" ? "t3.exe" : "t3");
 const result = spawnSync(executable, process.argv.slice(2), { stdio: "inherit" });
 if (result.error) {
-  process.stderr.write("t3: failed to start " + executable + ": " + result.error.message + "\\n");
+  process.stderr.write("${NPM_LAUNCHER_PACKAGE_NAME}: failed to start " + executable + ": " + result.error.message + "\\n");
   process.exit(1);
 }
 // A child killed by a signal has no status; report it the way a shell would.
