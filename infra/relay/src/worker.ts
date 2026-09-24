@@ -118,7 +118,9 @@ export const ApiLive = Api.make(
       main: import.meta.filename,
       compatibility: {
         date: "2026-05-22",
-        flags: ["nodejs_compat"],
+        // Otter Code keeps tunnels in the relay's own zone. Without this flag, fetches to
+        // same-zone tunnel hostnames bypass Cloudflare's front door and fail with 530.
+        flags: ["nodejs_compat", "global_fetch_strictly_public"],
       },
       domain: relayPublicDomain,
     })),
