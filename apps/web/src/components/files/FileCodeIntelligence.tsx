@@ -6,6 +6,7 @@ import type {
   LanguageRequest,
   LanguageResult,
 } from "@t3tools/contracts";
+import { getFiletypeFromFileName } from "@pierre/diffs";
 import type { Editor } from "@pierre/diffs/editor";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -24,11 +25,21 @@ import {
   type CodePosition,
   type Completion,
 } from "./codeIntelligenceEdits";
-import { fileDomRange, filePositionAtPoint, fileShadow, popupPosition } from "./fileCodeDom";
+import {
+  fileDomRange,
+  filePositionAtPoint,
+  fileShadow,
+  popupPosition,
+  type PopupAnchor,
+} from "./fileCodeDom";
 import {
   CODE_POPUP_CLASS,
   CodeInfoCard,
   CodeLocationList,
+  CompletionKindIcon,
+  CompletionLabel,
+  ProblemLine,
+  codePopupStyle,
   diagnosticLabel,
   type CodeInfo,
 } from "./codeIntelligencePopups";
@@ -60,7 +71,8 @@ type Suggestions = {
   selected: number;
   position: CodePosition;
   text: string;
-  anchor: { top: number; left: number };
+  prefix: string;
+  anchor: PopupAnchor;
 };
 export default function FileCodeIntelligence(props: Props) {
   const { editor, root, environmentId, cwd, relativePath } = props;
@@ -238,12 +250,12 @@ export default function FileCodeIntelligence(props: Props) {
       if (result?._tag !== "completions") return;
       const rect = fileDomRange(surface, position)?.getBoundingClientRect();
       if (!rect) return;
-      const items = completionChoices(
-        result.items,
-        wordAtLine(lines[position.line - 1] ?? "", position).prefix,
-      );
+      const prefix = wordAtLine(lines[position.line - 1] ?? "", position).prefix;
+      const items = completionChoices(result.items, prefix);
       updateSuggestions(
-        items.length ? { items, selected: 0, position, text, anchor: popupPosition(rect) } : null,
+        items.length
+          ? { items, selected: 0, position, text, prefix, anchor: popupPosition(rect) }
+          : null,
       );
     };
     const showSignature = async () => {
@@ -264,8 +276,8 @@ export default function FileCodeIntelligence(props: Props) {
           ? {
               display: item.label,
               documentation: item.documentation,
-              parameter: item.parameters[result.activeParameter]?.label,
-              anchor: popupPosition(rect, 140),
+              parameter: item.parameters[result.activeParameter]?.label ?? "",
+              anchor: popupPosition(rect, 140, true),
             }
           : null,
       );
@@ -358,7 +370,8 @@ export default function FileCodeIntelligence(props: Props) {
                 documentation: result.info?.documentation ?? "",
                 markdown: result.info?.markdown,
                 problems: found,
-                anchor: popupPosition(range.getBoundingClientRect(), 140),
+                language: getFiletypeFromFileName(relativePath),
+                anchor: popupPosition(range.getBoundingClientRect(), 140, true),
               });
             }
           });
@@ -619,34 +632,39 @@ export default function FileCodeIntelligence(props: Props) {
       {suggestions ? (
         <div
           data-file-code-popup
-          className={`${CODE_POPUP_CLASS} w-80 overflow-hidden`}
-          style={suggestions.anchor}
+          className={`${CODE_POPUP_CLASS} w-[420px]`}
+          style={codePopupStyle(suggestions.anchor, 420)}
           onPointerDown={(event) => event.preventDefault()}
         >
           <div
             id={listId}
             role="listbox"
             aria-label="Code suggestions"
-            className="max-h-52 overflow-auto py-1 font-mono text-xs"
+            className="max-h-[264px] overflow-auto font-mono text-[12px]"
           >
-            {suggestions.items.map((item, index) => (
-              <button
-                type="button"
-                key={`${item.label}:${item.kind}:${item.insertText}`}
-                id={`${listId}-${index}`}
-                role="option"
-                aria-selected={index === suggestions.selected}
-                tabIndex={-1}
-                className={`flex w-full items-center justify-between gap-4 px-3 py-1 text-left ${index === suggestions.selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"}`}
-                onClick={() => actions.current?.accept(index)}
-              >
-                <span className="truncate">{item.label}</span>
-                <span className="text-[10px] text-muted-foreground">{item.kind}</span>
-              </button>
-            ))}
-          </div>
-          <div className="border-t border-border px-3 py-1 text-[10px] text-muted-foreground">
-            ↑↓ select · Enter / Tab accept · Esc dismiss
+            {suggestions.items.map((item, index) => {
+              const selected = index === suggestions.selected;
+              return (
+                <button
+                  type="button"
+                  key={`${item.label}:${item.kind}:${item.insertText}`}
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={-1}
+                  className={`flex h-[22px] w-full items-center gap-1.5 px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                  onClick={() => actions.current?.accept(index)}
+                >
+                  <CompletionKindIcon kind={item.kind} />
+                  <CompletionLabel label={item.label} prefix={suggestions.prefix} />
+                  {selected ? (
+                    <span className="ml-auto shrink-0 pl-3 font-sans text-[11px] text-muted-foreground">
+                      {item.kind}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -661,8 +679,13 @@ export default function FileCodeIntelligence(props: Props) {
       ))}
       {panel ? (
         <div className="max-h-48 shrink-0 overflow-auto border-b border-border/60 text-xs">
-          <div className="sticky top-0 flex items-center justify-between bg-background px-3 py-1.5">
-            <span>{panel === "problems" ? "Problems" : locations.title}</span>
+          <div className="sticky top-0 z-10 flex items-center justify-between bg-background px-3 py-1">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {panel === "problems" ? "Problems" : locations.title}
+              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
+                {panel === "problems" ? diagnostics.length : locations.items.length}
+              </span>
+            </span>
             <Button
               variant="ghost"
               size="icon-xs"
@@ -682,23 +705,22 @@ export default function FileCodeIntelligence(props: Props) {
                     : "No problems in this file."}
               </p>
             ) : (
-              diagnostics.map((item) => (
-                <button
-                  type="button"
-                  key={JSON.stringify(item)}
-                  className="block w-full px-3 py-1.5 text-left hover:bg-accent"
-                  onClick={() => actions.current?.reveal(item.range.start)}
-                >
-                  <span
-                    className={
-                      item.severity === "error" ? "text-destructive" : "text-muted-foreground"
-                    }
+              diagnostics
+                .toSorted(
+                  (a, b) =>
+                    a.range.start.line - b.range.start.line ||
+                    a.range.start.column - b.range.start.column,
+                )
+                .map((item) => (
+                  <button
+                    type="button"
+                    key={JSON.stringify(item)}
+                    className="block w-full px-3 py-0.5 text-left hover:bg-accent"
+                    onClick={() => actions.current?.reveal(item.range.start)}
                   >
-                    {item.range.start.line}:{item.range.start.column} · {diagnosticLabel(item)}
-                  </span>
-                  <span className="ml-2">{item.message}</span>
-                </button>
-              ))
+                    <ProblemLine item={item} position />
+                  </button>
+                ))
             )
           ) : (
             <CodeLocationList

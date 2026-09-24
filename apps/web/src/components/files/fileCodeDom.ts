@@ -66,12 +66,17 @@ export function filePositionAtPoint(
   return hit ? { line: Number(hit.element.dataset.line), column: hit.column } : undefined;
 }
 
-export function popupPosition(rect: DOMRect, height = 220) {
-  return {
-    left: Math.max(8, Math.min(rect.left, window.innerWidth - 400)),
-    top:
-      rect.bottom + height < window.innerHeight
-        ? rect.bottom + 4
-        : Math.max(8, rect.top - height - 4),
-  };
+export type PopupAnchor = { left: number; top?: number; bottom?: number };
+
+/**
+ * Places a popup below `rect`, or above it for hovers (as VS Code does) when `height` fits.
+ * An above-popup anchors its bottom edge, so it touches its word however tall it renders.
+ */
+export function popupPosition(rect: DOMRect, height = 220, above = false): PopupAnchor {
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - 400));
+  const fitsBelow = rect.bottom + height < window.innerHeight;
+  const fitsAbove = rect.top - height > 8;
+  return (above ? fitsAbove : !fitsBelow && fitsAbove)
+    ? { left, bottom: window.innerHeight - rect.top + 4 }
+    : { left, top: fitsBelow ? rect.bottom + 4 : Math.max(8, rect.top - height - 4) };
 }
