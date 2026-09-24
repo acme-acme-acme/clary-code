@@ -11,8 +11,23 @@ describe("diffPanelStore", () => {
     useDiffPanelStore.setState({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
+      viewedByThreadKey: {},
     }),
   );
+
+  it("marks files viewed per review section and forgets them with the thread", () => {
+    const store = useDiffPanelStore.getState();
+    const mark = { version: 7, stat: "2:0" };
+    store.setFileViewed(THREAD_REF, "branch", "src/a.ts", mark);
+    store.setFileViewed(THREAD_REF, "branch", "src/b.ts", mark);
+    store.setFileViewed(THREAD_REF, "branch", "src/b.ts", null);
+
+    const threadViewed = Object.values(useDiffPanelStore.getState().viewedByThreadKey)[0];
+    expect(threadViewed).toEqual({ branch: { "src/a.ts": mark } });
+
+    store.removeThread(THREAD_REF);
+    expect(useDiffPanelStore.getState().viewedByThreadKey).toEqual({});
+  });
 
   it("defaults each thread to working tree changes without requiring git status", () => {
     expect(
