@@ -60,7 +60,9 @@ import { AnnotatableCodeView, type AnnotatableCodeViewHandle } from "./diffs/Ann
 import { DiffFileTree } from "./diffs/DiffFileTree";
 import { RightPanelResizeHandle } from "./preview/RightPanelResizeHandle";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
+import { diffViewedStat, isDiffFileViewed, type DiffViewedMark } from "./diffs/diffViewed.logic";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 import { Switch } from "./ui/switch";
 import {
@@ -506,12 +508,48 @@ export default function DiffPanel({
     () => renderableFiles.map(getCachedFileEntry),
     [renderableFiles],
   );
+  const viewedMarks = useDiffPanelStore((state) =>
+    routeThreadRef
+      ? state.viewedByThreadKey[scopedThreadKey(routeThreadRef)]?.[reviewSectionId]
+      : undefined,
+  );
+  const currentViewedMark = useCallback(
+    (fileDiff: FileDiffMetadata): DiffViewedMark => ({
+      // A placeholder has no patch yet, so only its line counts say whether it changed.
+      version: fileDiff.cacheKey?.endsWith(":pending")
+        ? null
+        : getCachedFileEntry(fileDiff).fileVersion,
+      stat: diffViewedStat(fileStats.get(resolveFileDiffPath(fileDiff))),
+    }),
+    [fileStats],
+  );
+  // `changedKeys` were marked viewed but their diff has moved on since.
+  const viewedFiles = useMemo(() => {
+    const keys = new Set<string>();
+    const paths = new Set<string>();
+    const changedKeys = new Set<string>();
+    for (const { fileDiff, fileKey } of renderableFileEntries) {
+      const path = resolveFileDiffPath(fileDiff);
+      const mark = viewedMarks?.[path];
+      if (!mark) continue;
+      if (isDiffFileViewed(mark, currentViewedMark(fileDiff))) {
+        keys.add(fileKey);
+        paths.add(path);
+      } else {
+        changedKeys.add(fileKey);
+      }
+    }
+    return { keys, paths, changedKeys };
+  }, [currentViewedMark, renderableFileEntries, viewedMarks]);
+  // Viewed files start collapsed, like every file when the setting asks for it.
   const defaultCollapsedDiffFileKeys = useMemo(
     () =>
       settings.diffFilesCollapsed
         ? new Set(renderableFileEntries.map((file) => file.fileKey))
-        : EMPTY_COLLAPSED_DIFF_FILE_KEYS,
-    [renderableFileEntries, settings.diffFilesCollapsed],
+        : viewedFiles.keys.size > 0
+          ? viewedFiles.keys
+          : EMPTY_COLLAPSED_DIFF_FILE_KEYS,
+    [renderableFileEntries, settings.diffFilesCollapsed, viewedFiles.keys],
   );
   const collapsedDiffFileKeys =
     collapsedDiffFiles.scopeKey === collapseScopeKey
@@ -708,6 +746,39 @@ export default function DiffPanel({
       });
     },
     [collapseScopeKey, defaultCollapsedDiffFileKeys],
+  );
+
+  // Marking a file viewed collapses it and unmarking expands it again.
+  const toggleDiffFileViewed = useCallback(
+    (fileDiff: FileDiffMetadata) => {
+      if (!routeThreadRef) return;
+      const { fileKey } = getCachedFileEntry(fileDiff);
+      const viewed = viewedFiles.keys.has(fileKey);
+      useDiffPanelStore
+        .getState()
+        .setFileViewed(
+          routeThreadRef,
+          reviewSectionId,
+          resolveFileDiffPath(fileDiff),
+          viewed ? null : currentViewedMark(fileDiff),
+        );
+      setCollapsedDiffFiles((current) => {
+        const next = new Set(
+          current.scopeKey === collapseScopeKey ? current.fileKeys : defaultCollapsedDiffFileKeys,
+        );
+        if (viewed) next.delete(fileKey);
+        else next.add(fileKey);
+        return { scopeKey: collapseScopeKey, fileKeys: next };
+      });
+    },
+    [
+      collapseScopeKey,
+      currentViewedMark,
+      defaultCollapsedDiffFileKeys,
+      reviewSectionId,
+      routeThreadRef,
+      viewedFiles.keys,
+    ],
   );
 
   const toggleDiffFileCollapse = useCallback(() => {
@@ -1154,7 +1225,11 @@ export default function DiffPanel({
                       if (!(node instanceof HTMLElement)) continue;
                       // Header controls keep their own actions. In particular, the chevron must
                       // not also trigger the row handler or the two toggles cancel each other.
-                      if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) {
+                      if (
+                        node instanceof HTMLButtonElement ||
+                        node instanceof HTMLAnchorElement ||
+                        node instanceof HTMLLabelElement
+                      ) {
                         return;
                       }
                     }
@@ -1232,17 +1307,50 @@ export default function DiffPanel({
                       ? {
                           unsafeCSSExtra:
                             "[data-additions-count], [data-deletions-count] { display: none; }",
-                          renderHeaderMetadata: (fileDiff: FileDiffMetadata) => {
-                            const stat = fileStats.get(resolveFileDiffPath(fileDiff));
-                            return stat ? (
-                              <DiffStatLabel
-                                additions={stat.additions}
-                                deletions={stat.deletions}
-                              />
-                            ) : null;
-                          },
                         }
                       : {})}
+                    renderHeaderMetadata={(fileDiff) => {
+                      const stat = lazySource
+                        ? fileStats.get(resolveFileDiffPath(fileDiff))
+                        : undefined;
+                      const { fileKey } = getCachedFileEntry(fileDiff);
+                      const changed = viewedFiles.changedKeys.has(fileKey);
+                      return (
+                        <span className="flex items-center gap-3">
+                          {stat ? (
+                            <DiffStatLabel additions={stat.additions} deletions={stat.deletions} />
+                          ) : null}
+                          {/* The header itself folds the file, so the tick keeps its press to
+                              itself; the capture listener above skips labels. */}
+                          {routeThreadRef ? (
+                            <label
+                              className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-muted-foreground"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <Checkbox
+                                aria-label={changed ? "Changed" : "Viewed"}
+                                checked={viewedFiles.keys.has(fileKey)}
+                                onCheckedChange={() => toggleDiffFileViewed(fileDiff)}
+                              />
+                              {changed ? (
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={<span className="text-amber-600 dark:text-amber-500" />}
+                                  >
+                                    Changed
+                                  </TooltipTrigger>
+                                  <TooltipPopup side="bottom">
+                                    This file has changed since you marked it viewed.
+                                  </TooltipPopup>
+                                </Tooltip>
+                              ) : (
+                                "Viewed"
+                              )}
+                            </label>
+                          ) : null}
+                        </span>
+                      );
+                    }}
                     renderHeaderPrefix={(fileDiff, fileKey) => {
                       if (singleFileEntry) return null;
                       const unavailable = fileDiff.cacheKey?.endsWith(":pending") === true;
@@ -1306,6 +1414,7 @@ export default function DiffPanel({
                       ariaLabel={`${reviewSectionTitle} files`}
                       entries={fileTreeEntries}
                       selectedPath={singleFilePath}
+                      viewedPaths={viewedFiles.paths}
                       revealRequestId={selectedFileRevealRequestId}
                       onSelectFile={revealDiffFile}
                     />
