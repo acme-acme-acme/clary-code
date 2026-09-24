@@ -1,9 +1,11 @@
 import { matchers, routes, type Transform, type VercelConfig } from "@vercel/config/v1";
 
-const ROUTER_HOST = "app.t3.codes";
+// Otter Code publishes only nightlies, which alias code.otterware.dev directly, so the
+// channel router sits on a host that never receives traffic.
+const ROUTER_HOST = "router.code.otterware.dev";
 const HOSTED_WEB_CHANNEL_COOKIE = "t3code_web_channel";
-const LATEST_ORIGIN = "https://latest.app.t3.codes";
-const NIGHTLY_ORIGIN = "https://nightly.app.t3.codes";
+const LATEST_ORIGIN = "https://latest.code.otterware.dev";
+const NIGHTLY_ORIGIN = "https://nightly.code.otterware.dev";
 const CLEAN_CHANNEL_QUERY_TRANSFORMS = [
   {
     type: "request.query",

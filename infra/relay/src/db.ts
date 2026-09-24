@@ -1,3 +1,4 @@
+import { adopt } from "alchemy/AdoptPolicy";
 import type { PgClient } from "@effect/sql-pg/PgClient";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
@@ -47,12 +48,14 @@ export const PlanetscaleDatabase = Effect.gen(function* () {
   const database =
     mode === "shared-database"
       ? yield* Planetscale.PostgresDatabase("RelayPostgresDatabase", {
-          name: "t3coderelay",
-          region: { slug: "us-west" },
-          clusterSize: "PS_20",
+          // Otter Code adopts its existing single-node database instead of T3's HA cluster.
+          name: "otter-code",
+          region: { slug: "eu-central" },
+          clusterSize: "PS_5",
+          arch: "arm",
           migrations: { dir: schema.out, table: "relay_migrations" },
-          replicas: 2,
-        }).pipe(RemovalPolicy.retain())
+          replicas: 0,
+        }).pipe(RemovalPolicy.retain(), adopt())
       : yield* Planetscale.PostgresDatabase.ref("RelayPostgresDatabase", {
           stage: "prod",
         });
