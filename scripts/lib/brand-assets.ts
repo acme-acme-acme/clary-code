@@ -1,7 +1,7 @@
 export const BRAND_ASSET_PATHS = {
-  developmentIconComposerProject: "assets/dev/app-icon.icon",
-  developmentIosIconPng: "assets/dev/blueprint-ios-1024.png",
-  developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
+  developmentIconComposerProject: "assets/otter/app-icon.icon",
+  developmentIosIconPng: "assets/otter/otter-ios-1024.png",
+  developmentUniversalIconPng: "assets/otter/otter-universal-1024.png",
 
   productionIconComposerProject: "assets/otter/app-icon.icon",
   productionIosIconPng: "assets/otter/otter-ios-1024.png",
@@ -23,12 +23,12 @@ export const BRAND_ASSET_PATHS = {
   nightlyWebFavicon32Png: "assets/otter/otter-web-favicon-32x32.png",
   nightlyWebAppleTouchIconPng: "assets/otter/otter-web-apple-touch-180.png",
 
-  developmentDesktopIconPng: "assets/dev/blueprint-macos-1024.png",
-  developmentWindowsIconIco: "assets/dev/blueprint-windows.ico",
-  developmentWebFaviconIco: "assets/dev/blueprint-web-favicon.ico",
-  developmentWebFavicon16Png: "assets/dev/blueprint-web-favicon-16x16.png",
-  developmentWebFavicon32Png: "assets/dev/blueprint-web-favicon-32x32.png",
-  developmentWebAppleTouchIconPng: "assets/dev/blueprint-web-apple-touch-180.png",
+  developmentDesktopIconPng: "assets/otter/otter-macos-1024.png",
+  developmentWindowsIconIco: "assets/otter/otter-windows.ico",
+  developmentWebFaviconIco: "assets/otter/otter-web-favicon.ico",
+  developmentWebFavicon16Png: "assets/otter/otter-web-favicon-16x16.png",
+  developmentWebFavicon32Png: "assets/otter/otter-web-favicon-32x32.png",
+  developmentWebAppleTouchIconPng: "assets/otter/otter-web-apple-touch-180.png",
 } as const;
 
 export type WebAssetBrand = "development" | "nightly" | "production";
