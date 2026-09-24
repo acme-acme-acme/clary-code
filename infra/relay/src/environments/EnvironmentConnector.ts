@@ -4,6 +4,7 @@ import {
   EnvironmentHttpForbiddenError,
   EnvironmentHttpInternalServerError,
   EnvironmentHttpUnauthorizedError,
+  type LinearIssueChange,
 } from "@t3tools/contracts";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
 import {
@@ -14,6 +15,13 @@ import {
   RelayEnvironmentMintResponseProofPayload,
   RelayCloudMintCredentialProofPayload,
   RelayEnvironmentConnectNotAuthorizedReason,
+  RelayLinearAgentSessionResponseProofPayload,
+  type RelayLinearAgentPromptOutcome,
+  type RelayLinearAgentPromptProofPayload,
+  type RelayLinearIssueChangesProofPayload,
+  type RelayLinearAgentSessionIssue,
+  type RelayLinearAgentSessionOutcome,
+  type RelayLinearAgentSessionProofPayload,
   type RelayEnvironmentConnectResponse,
   type RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
@@ -21,6 +29,10 @@ import {
   normalizeRelayIssuer,
   RELAY_HEALTH_REQUEST_TYP,
   RELAY_HEALTH_RESPONSE_TYP,
+  RELAY_LINEAR_CHANGES_REQUEST_TYP,
+  RELAY_LINEAR_PROMPT_REQUEST_TYP,
+  RELAY_LINEAR_SESSION_REQUEST_TYP,
+  RELAY_LINEAR_SESSION_RESPONSE_TYP,
   RELAY_MINT_REQUEST_TYP,
   RELAY_MINT_RESPONSE_TYP,
   signRelayJwt,
@@ -72,7 +84,13 @@ export class EnvironmentConnectNotAuthorized extends Schema.TaggedError<Environm
   "EnvironmentConnectNotAuthorized",
   {
     environmentId: Schema.String,
-    operation: Schema.Literals(["connect", "status"]),
+    operation: Schema.Literals([
+      "connect",
+      "status",
+      "linear_session",
+      "linear_prompt",
+      "linear_changes",
+    ]),
     reason: RelayEnvironmentConnectNotAuthorizedReason,
   },
 ) {
@@ -85,7 +103,13 @@ export class EnvironmentMintRequestFailed extends Schema.TaggedError<Environment
   "EnvironmentMintRequestFailed",
   {
     environmentId: Schema.String,
-    operation: Schema.Literals(["connect", "status"]),
+    operation: Schema.Literals([
+      "connect",
+      "status",
+      "linear_session",
+      "linear_prompt",
+      "linear_changes",
+    ]),
     cause: Schema.Defect(),
   },
 ) {
@@ -110,7 +134,13 @@ export class EnvironmentMintResponseInvalid extends Schema.TaggedError<Environme
   "EnvironmentMintResponseInvalid",
   {
     environmentId: Schema.String,
-    operation: Schema.Literals(["connect", "status"]),
+    operation: Schema.Literals([
+      "connect",
+      "status",
+      "linear_session",
+      "linear_prompt",
+      "linear_changes",
+    ]),
   },
 ) {
   override get message(): string {
@@ -142,6 +172,37 @@ export class EnvironmentConnector extends Context.Service<
       readonly userId: string;
       readonly environmentId: string;
     }) => Effect.Effect<RelayEnvironmentStatusResponse, EnvironmentConnectorError>;
+    /** Asks the environment to start a thread for an issue delegated in Linear. */
+    readonly linearSession: (input: {
+      readonly userId: string;
+      readonly environmentId: string;
+      readonly agentSessionId: string;
+      readonly issue: RelayLinearAgentSessionIssue;
+      readonly prompt: string;
+      readonly creatorName: string | null;
+    }) => Effect.Effect<
+      {
+        readonly outcome: RelayLinearAgentSessionOutcome;
+        readonly threadId: string | null;
+        readonly environmentLabel: string;
+      },
+      EnvironmentConnectorError
+    >;
+    /** Hands a reply or stop sent in Linear to the environment running the session's thread. */
+    readonly linearPrompt: (input: {
+      readonly userId: string;
+      readonly environmentId: string;
+      readonly agentSessionId: string;
+      readonly activityId: string;
+      readonly kind: "message" | "stop";
+      readonly body: string;
+    }) => Effect.Effect<RelayLinearAgentPromptOutcome, EnvironmentConnectorError>;
+    /** Tells an environment which Linear issues just changed, so it refreshes them now. */
+    readonly linearIssueChanges: (input: {
+      readonly userId: string;
+      readonly environmentId: string;
+      readonly changes: ReadonlyArray<LinearIssueChange>;
+    }) => Effect.Effect<void, EnvironmentConnectorError>;
   }
 >()("t3code-relay/environments/EnvironmentConnector") {}
 
@@ -150,6 +211,9 @@ const decodeMintResponseProof = Schema.decodeUnknownEffect(
 );
 const decodeHealthResponseProof = Schema.decodeUnknownEffect(
   RelayEnvironmentHealthResponseProofPayload,
+);
+const decodeLinearSessionResponseProof = Schema.decodeUnknownEffect(
+  RelayLinearAgentSessionResponseProofPayload,
 );
 const isEnvironmentHealthError = Schema.is(
   Schema.Union([
@@ -301,7 +365,12 @@ const make = Effect.gen(function* () {
     );
   const resolveManagedEndpoint = Effect.fn("relay.environment_connector.resolve_managed_endpoint")(
     function* (input: {
-      readonly operation: "connect" | "status";
+      readonly operation:
+        | "connect"
+        | "status"
+        | "linear_session"
+        | "linear_prompt"
+        | "linear_changes";
       readonly link: EnvironmentLinks.RelayLinkedEnvironmentRecord;
       readonly allocation: ManagedEndpointAllocations.ManagedEndpointAllocation | null;
     }) {
@@ -392,6 +461,239 @@ const make = Effect.gen(function* () {
   );
 
   return EnvironmentConnector.of({
+    linearSession: Effect.fn("relay.environment_connector.linear_session")(function* (input) {
+      yield* Effect.annotateCurrentSpan({
+        "relay.environment_id": input.environmentId,
+        "relay.operation": "linear_session",
+      });
+      const { link, allocation } = yield* Effect.all(
+        { link: links.getForUser(input), allocation: allocations.get(input) },
+        { concurrency: 2 },
+      );
+      if (!link) {
+        return yield* new EnvironmentConnectNotAuthorized({
+          environmentId: input.environmentId,
+          operation: "linear_session",
+          reason: "environment_link_not_found",
+        });
+      }
+      const endpoint = yield* resolveManagedEndpoint({
+        operation: "linear_session",
+        link,
+        allocation,
+      });
+      const failed = (cause: unknown) =>
+        new EnvironmentMintRequestFailed({
+          environmentId: input.environmentId,
+          operation: "linear_session",
+          cause,
+        });
+      const now = yield* DateTime.now;
+      const nonce = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed));
+      const payload = {
+        iss: relayIssuer,
+        aud: `t3-env:${link.environmentId}`,
+        sub: input.userId,
+        jti: yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed)),
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        exp: Math.floor(DateTime.add(now, { minutes: 2 }).epochMilliseconds / 1_000),
+        environmentId: link.environmentId,
+        nonce,
+        scope: ["linear:session"],
+        agentSessionId: input.agentSessionId,
+        issue: input.issue,
+        prompt: input.prompt,
+        creatorName: input.creatorName,
+      } satisfies RelayLinearAgentSessionProofPayload;
+      const proof = yield* signRelayJwt({
+        privateKey: Redacted.value(settings.cloudMintPrivateKey),
+        typ: RELAY_LINEAR_SESSION_REQUEST_TYP,
+        payload,
+      }).pipe(Effect.mapError(failed));
+      const environmentClient = yield* makeEnvironmentClient(endpoint.httpBaseUrl);
+      const response = yield* environmentClient.connect
+        .linearAgentSession({ payload: { proof } })
+        .pipe(
+          withoutRedirects,
+          Effect.mapError(failed),
+          Effect.timeoutOption(Duration.millis(ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS)),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(
+                  new EnvironmentMintRequestTimedOut({
+                    environmentId: input.environmentId,
+                    timeoutMs: ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS,
+                  }),
+                ),
+              onSome: Effect.succeed,
+            }),
+          ),
+        );
+      const verified = yield* verifyWithEnvironmentKeys({
+        token: response.proof,
+        typ: RELAY_LINEAR_SESSION_RESPONSE_TYP,
+        issuer: `t3-env:${link.environmentId}`,
+        audience: relayIssuer,
+        nowEpochSeconds: Math.floor((yield* DateTime.now).epochMilliseconds / 1_000),
+        environmentPublicKeys: [link.environmentPublicKey],
+        decodePayload: decodeLinearSessionResponseProof,
+      });
+      if (
+        verified === null ||
+        verified.environmentId !== link.environmentId ||
+        verified.requestNonce !== nonce ||
+        verified.outcome !== response.outcome ||
+        verified.threadId !== response.threadId
+      ) {
+        return yield* new EnvironmentMintResponseInvalid({
+          environmentId: input.environmentId,
+          operation: "linear_session",
+        });
+      }
+      return {
+        outcome: response.outcome,
+        threadId: response.threadId,
+        environmentLabel: link.label,
+      };
+    }),
+    linearPrompt: Effect.fn("relay.environment_connector.linear_prompt")(function* (input) {
+      yield* Effect.annotateCurrentSpan({
+        "relay.environment_id": input.environmentId,
+        "relay.operation": "linear_prompt",
+      });
+      const { link, allocation } = yield* Effect.all(
+        { link: links.getForUser(input), allocation: allocations.get(input) },
+        { concurrency: 2 },
+      );
+      if (!link) {
+        return yield* new EnvironmentConnectNotAuthorized({
+          environmentId: input.environmentId,
+          operation: "linear_prompt",
+          reason: "environment_link_not_found",
+        });
+      }
+      const endpoint = yield* resolveManagedEndpoint({
+        operation: "linear_prompt",
+        link,
+        allocation,
+      });
+      const failed = (cause: unknown) =>
+        new EnvironmentMintRequestFailed({
+          environmentId: input.environmentId,
+          operation: "linear_prompt",
+          cause,
+        });
+      const now = yield* DateTime.now;
+      const payload = {
+        iss: relayIssuer,
+        aud: `t3-env:${link.environmentId}`,
+        sub: input.userId,
+        jti: yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed)),
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        exp: Math.floor(DateTime.add(now, { minutes: 2 }).epochMilliseconds / 1_000),
+        environmentId: link.environmentId,
+        nonce: yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed)),
+        scope: ["linear:prompt"],
+        agentSessionId: input.agentSessionId,
+        activityId: input.activityId,
+        kind: input.kind,
+        body: input.body,
+      } satisfies RelayLinearAgentPromptProofPayload;
+      const proof = yield* signRelayJwt({
+        privateKey: Redacted.value(settings.cloudMintPrivateKey),
+        typ: RELAY_LINEAR_PROMPT_REQUEST_TYP,
+        payload,
+      }).pipe(Effect.mapError(failed));
+      const environmentClient = yield* makeEnvironmentClient(endpoint.httpBaseUrl);
+      // The outcome only picks the note posted in Linear, so it isn't signed back.
+      const response = yield* environmentClient.connect
+        .linearAgentPrompt({ payload: { proof } })
+        .pipe(
+          withoutRedirects,
+          Effect.mapError(failed),
+          Effect.timeoutOption(Duration.millis(ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS)),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(
+                  new EnvironmentMintRequestTimedOut({
+                    environmentId: input.environmentId,
+                    timeoutMs: ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS,
+                  }),
+                ),
+              onSome: Effect.succeed,
+            }),
+          ),
+        );
+      return response.outcome;
+    }),
+    linearIssueChanges: Effect.fn("relay.environment_connector.linear_changes")(function* (input) {
+      yield* Effect.annotateCurrentSpan({
+        "relay.environment_id": input.environmentId,
+        "relay.operation": "linear_changes",
+        "relay.linear.change_count": input.changes.length,
+      });
+      const { link, allocation } = yield* Effect.all(
+        { link: links.getForUser(input), allocation: allocations.get(input) },
+        { concurrency: 2 },
+      );
+      if (!link) {
+        return yield* new EnvironmentConnectNotAuthorized({
+          environmentId: input.environmentId,
+          operation: "linear_changes",
+          reason: "environment_link_not_found",
+        });
+      }
+      const endpoint = yield* resolveManagedEndpoint({
+        operation: "linear_changes",
+        link,
+        allocation,
+      });
+      const failed = (cause: unknown) =>
+        new EnvironmentMintRequestFailed({
+          environmentId: input.environmentId,
+          operation: "linear_changes",
+          cause,
+        });
+      const now = yield* DateTime.now;
+      const payload = {
+        iss: relayIssuer,
+        aud: `t3-env:${link.environmentId}`,
+        sub: input.userId,
+        jti: yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed)),
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        exp: Math.floor(DateTime.add(now, { minutes: 2 }).epochMilliseconds / 1_000),
+        environmentId: link.environmentId,
+        nonce: yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed)),
+        scope: ["linear:changes"],
+        changes: input.changes,
+      } satisfies RelayLinearIssueChangesProofPayload;
+      const proof = yield* signRelayJwt({
+        privateKey: Redacted.value(settings.cloudMintPrivateKey),
+        typ: RELAY_LINEAR_CHANGES_REQUEST_TYP,
+        payload,
+      }).pipe(Effect.mapError(failed));
+      const environmentClient = yield* makeEnvironmentClient(endpoint.httpBaseUrl);
+      // Only a nudge to re-read: nothing in the answer is trusted, so it isn't signed back.
+      yield* environmentClient.connect.linearIssueChanges({ payload: { proof } }).pipe(
+        withoutRedirects,
+        Effect.mapError(failed),
+        Effect.timeoutOption(Duration.millis(ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS)),
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              Effect.fail(
+                new EnvironmentMintRequestTimedOut({
+                  environmentId: input.environmentId,
+                  timeoutMs: ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS,
+                }),
+              ),
+            onSome: () => Effect.void,
+          }),
+        ),
+      );
+    }),
     status: Effect.fn("relay.environment_connector.status")(function* (input) {
       yield* Effect.annotateCurrentSpan({
         "relay.environment_id": input.environmentId,

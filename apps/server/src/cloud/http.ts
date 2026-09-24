@@ -27,6 +27,9 @@ import {
   type RelayEnvironmentMintResponse as RelayEnvironmentMintResponseShape,
   RelayEnvironmentLinkProof,
   RelayEnvironmentLinkProofPayload,
+  type RelayLinearAgentPromptRequest,
+  type RelayLinearAgentSessionRequest,
+  type RelayLinearIssueChangesRequest,
   RelayLinkProofRequest,
   RelayManagedEndpointOrigin,
   RelayManagedEndpointRecoveryProofPayload,
@@ -98,6 +101,16 @@ import {
 import * as CliTokenManager from "./CliTokenManager.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import { traceRelayRequest } from "./traceRelayRequest.ts";
+import {
+  deliverLinearAgentPrompt,
+  handleLinearAgentPromptRequest,
+} from "../linear/LinearAgentPrompts.ts";
+import { handleLinearIssueChangesRequest } from "../linear/LinearIssueChanges.ts";
+import * as LinearIssueSyncReactor from "../linear/LinearIssueSyncReactor.ts";
+import {
+  handleLinearAgentSessionRequest,
+  launchLinearAgentSession,
+} from "../linear/LinearAgentSessionLauncher.ts";
 import { filterRelayResponse, relayRequestError, shouldRetryCloudLink } from "./relayResponse.ts";
 
 const CLOUD_MINT_NONCE_PREFIX = "cloud-mint-nonce-";
@@ -1589,6 +1602,134 @@ const cloudMintCredentialHandler = Effect.fn("environment.cloud.mintCredential")
   ),
 );
 
+const readCloudSecretString = (
+  secrets: ServerSecretStore.ServerSecretStore["Service"],
+  name: string,
+  missing: () => EnvironmentAuth.ServerAuthInternalError,
+) =>
+  secrets.get(name).pipe(
+    Effect.mapError(() => missing()),
+    Effect.flatMap((bytes) =>
+      Option.isSome(bytes) ? Effect.succeed(bytesToString(bytes.value)) : Effect.fail(missing()),
+    ),
+  );
+
+const isLinearSessionRequestError = Schema.is(
+  Schema.Union([EnvironmentHttpUnauthorizedError, EnvironmentHttpConflictError]),
+);
+
+/** The relay proof checks shared by the Linear session and prompt requests. */
+const linearRelayProofChecks = (dependencies: CloudHttpDependencies) => ({
+  secrets: dependencies.secrets,
+  environment: dependencies.environment,
+  cloudMintPublicKey: readCloudSecretString(
+    dependencies.secrets,
+    CLOUD_MINT_PUBLIC_KEY,
+    () => new EnvironmentAuth.ServerAuthCloudMintPublicKeyMissingError({}),
+  ),
+  relayIssuer: readCloudSecretString(
+    dependencies.secrets,
+    RELAY_ISSUER_SECRET,
+    () => new EnvironmentAuth.ServerAuthCloudRelayIssuerMissingError({}),
+  ).pipe(
+    Effect.catch(() =>
+      readCloudSecretString(
+        dependencies.secrets,
+        RELAY_URL_SECRET,
+        () => new EnvironmentAuth.ServerAuthCloudRelayIssuerMissingError({}),
+      ),
+    ),
+  ),
+  linkedCloudUserId: readInstalledCloudUserId(dependencies.secrets),
+  isValidProofWindow: hasBoundedCloudProofLifetime,
+  consumeReplayGuards: (names: ReadonlyArray<string>, value: Uint8Array) =>
+    consumeCloudReplayGuards({ secrets: dependencies.secrets, names, value }),
+});
+
+const linearAgentPromptHandler = (
+  dependencies: CloudHttpDependencies,
+  request: RelayLinearAgentPromptRequest,
+) =>
+  handleLinearAgentPromptRequest(
+    { ...linearRelayProofChecks(dependencies), deliver: deliverLinearAgentPrompt },
+    request,
+  ).pipe(
+    Effect.tap(() => appendCloudCredentialResponseHeaders),
+    Effect.catch(
+      (
+        error,
+      ): Effect.Effect<
+        never,
+        | EnvironmentHttpUnauthorizedError
+        | EnvironmentHttpConflictError
+        | EnvironmentHttpInternalServerError
+      > =>
+        isLinearSessionRequestError(error)
+          ? Effect.fail(error)
+          : failEnvironmentCloudInternalError("Could not deliver the Linear message.")(error),
+    ),
+  );
+
+const linearIssueChangesHandler = (
+  dependencies: CloudHttpDependencies,
+  request: RelayLinearIssueChangesRequest,
+) =>
+  handleLinearIssueChangesRequest(
+    {
+      ...linearRelayProofChecks(dependencies),
+      // A replayed "issue changed" only triggers one extra read of an issue this
+      // environment already follows, and these arrive for every Linear edit, so
+      // they skip the replay guards that would otherwise pile up in the secret store.
+      consumeReplayGuards: () => Effect.succeed(true),
+      deliver: (changes) =>
+        LinearIssueSyncReactor.LinearIssueSyncReactor.pipe(
+          Effect.flatMap((reactor) => reactor.publishIssueChanges(changes)),
+        ),
+    },
+    request,
+  ).pipe(
+    Effect.catch(
+      (
+        error,
+      ): Effect.Effect<
+        never,
+        | EnvironmentHttpUnauthorizedError
+        | EnvironmentHttpConflictError
+        | EnvironmentHttpInternalServerError
+      > =>
+        isLinearSessionRequestError(error)
+          ? Effect.fail(error)
+          : failEnvironmentCloudInternalError("Could not accept Linear issue changes.")(error),
+    ),
+  );
+
+const linearAgentSessionHandler = (
+  dependencies: CloudHttpDependencies,
+  request: RelayLinearAgentSessionRequest,
+) =>
+  handleLinearAgentSessionRequest(
+    {
+      ...linearRelayProofChecks(dependencies),
+      launch: launchLinearAgentSession,
+    },
+    request,
+  ).pipe(
+    Effect.tap(() => appendCloudCredentialResponseHeaders),
+    Effect.catch(
+      (
+        error,
+      ): Effect.Effect<
+        never,
+        | EnvironmentHttpUnauthorizedError
+        | EnvironmentHttpConflictError
+        | EnvironmentHttpInternalServerError
+      > =>
+        isLinearSessionRequestError(error)
+          ? Effect.fail(error)
+          : failEnvironmentCloudInternalError("Could not start the delegated Linear issue.")(error),
+    ),
+  );
+
 export const connectHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "connect",
@@ -1604,6 +1745,15 @@ export const connectHttpApiLayer = HttpApiBuilder.group(
       .handle("mintCredential", ({ payload }) => cloudMintCredentialHandler(dependencies, payload))
       .handle("t3MintCredential", ({ payload }) =>
         traceRelayRequest(cloudMintCredentialHandler(dependencies, payload)),
+      )
+      .handle("linearAgentSession", ({ payload }) =>
+        traceRelayRequest(linearAgentSessionHandler(dependencies, payload)),
+      )
+      .handle("linearAgentPrompt", ({ payload }) =>
+        traceRelayRequest(linearAgentPromptHandler(dependencies, payload)),
+      )
+      .handle("linearIssueChanges", ({ payload }) =>
+        traceRelayRequest(linearIssueChangesHandler(dependencies, payload)),
       );
   }),
 );
