@@ -861,6 +861,189 @@ export const RelayEnvironmentMintResponse = Schema.Struct({
 });
 export type RelayEnvironmentMintResponse = typeof RelayEnvironmentMintResponse.Type;
 
+/**
+ * An issue delegated to the Otter Linear agent, handed to the linked
+ * environment inside the relay-signed request so the environment can start a
+ * thread without holding any Linear credential.
+ */
+export const RelayLinearAgentSessionIssue = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  identifier: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  teamKey: Schema.NullOr(TrimmedNonEmptyString),
+  /**
+   * Linear's suggested branch name for the issue, used as the worktree branch.
+   * Optional so relays and environments can upgrade independently.
+   */
+  branchName: Schema.optional(TrimmedNonEmptyString),
+});
+export type RelayLinearAgentSessionIssue = typeof RelayLinearAgentSessionIssue.Type;
+
+export const RelayLinearAgentSessionProofPayload = Schema.Struct({
+  ...RelaySignedJwtRegisteredClaims,
+  environmentId: EnvironmentId,
+  nonce: TrimmedNonEmptyString,
+  scope: Schema.Array(Schema.Literal("linear:session")),
+  agentSessionId: TrimmedNonEmptyString,
+  issue: RelayLinearAgentSessionIssue,
+  /** Linear's prompt context for the session: the issue, comments, and team guidance. */
+  prompt: Schema.String,
+  creatorName: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type RelayLinearAgentSessionProofPayload = typeof RelayLinearAgentSessionProofPayload.Type;
+
+export const RelayLinearAgentSessionRequest = Schema.Struct({
+  proof: TrimmedNonEmptyString,
+});
+export type RelayLinearAgentSessionRequest = typeof RelayLinearAgentSessionRequest.Type;
+
+/** `no_project`: the environment has no Linear project configured for the issue's team. */
+export const RelayLinearAgentSessionOutcome = Schema.Literals(["launched", "no_project"]);
+export type RelayLinearAgentSessionOutcome = typeof RelayLinearAgentSessionOutcome.Type;
+
+export const RelayLinearAgentSessionResponseProofPayload = Schema.Struct({
+  ...RelaySignedJwtRegisteredClaims,
+  environmentId: EnvironmentId,
+  requestNonce: TrimmedNonEmptyString,
+  outcome: RelayLinearAgentSessionOutcome,
+  threadId: Schema.NullOr(ThreadId),
+});
+export type RelayLinearAgentSessionResponseProofPayload =
+  typeof RelayLinearAgentSessionResponseProofPayload.Type;
+
+export const RelayLinearAgentSessionResponse = Schema.Struct({
+  outcome: RelayLinearAgentSessionOutcome,
+  threadId: Schema.NullOr(ThreadId),
+  proof: TrimmedNonEmptyString,
+});
+export type RelayLinearAgentSessionResponse = typeof RelayLinearAgentSessionResponse.Type;
+
+/**
+ * A reply or stop request someone sent in a Linear agent session, handed to
+ * the environment running the session's thread inside a relay-signed request.
+ */
+export const RelayLinearAgentPromptProofPayload = Schema.Struct({
+  ...RelaySignedJwtRegisteredClaims,
+  environmentId: EnvironmentId,
+  nonce: TrimmedNonEmptyString,
+  scope: Schema.Array(Schema.Literal("linear:prompt")),
+  agentSessionId: TrimmedNonEmptyString,
+  /** Linear's activity id, so a redelivered prompt maps to the same message. */
+  activityId: TrimmedNonEmptyString,
+  kind: Schema.Literals(["message", "stop"]),
+  body: Schema.String,
+});
+export type RelayLinearAgentPromptProofPayload = typeof RelayLinearAgentPromptProofPayload.Type;
+
+export const RelayLinearAgentPromptRequest = Schema.Struct({
+  proof: TrimmedNonEmptyString,
+});
+export type RelayLinearAgentPromptRequest = typeof RelayLinearAgentPromptRequest.Type;
+
+/** `not_running`: a stop arrived while nothing ran. `thread_missing`: the thread was deleted. */
+export const RelayLinearAgentPromptOutcome = Schema.Literals([
+  "delivered",
+  "not_running",
+  "thread_missing",
+]);
+export type RelayLinearAgentPromptOutcome = typeof RelayLinearAgentPromptOutcome.Type;
+
+export const RelayLinearAgentPromptResponse = Schema.Struct({
+  outcome: RelayLinearAgentPromptOutcome,
+});
+export type RelayLinearAgentPromptResponse = typeof RelayLinearAgentPromptResponse.Type;
+
+const LinearActivityText = TrimmedNonEmptyString.check(Schema.isMaxLength(8_000));
+
+/** One step of a delegated thread, mirrored into its Linear agent session. */
+export const RelayLinearActivity = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literals(["thought", "elicitation", "response", "error"]),
+    body: LinearActivityText,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("action"),
+    action: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+    parameter: Schema.String.check(Schema.isMaxLength(2_000)),
+    result: Schema.optional(Schema.String.check(Schema.isMaxLength(4_000))),
+  }),
+]);
+export type RelayLinearActivity = typeof RelayLinearActivity.Type;
+
+export const RelayLinearActivitiesParams = Schema.Struct({
+  environmentId: EnvironmentId,
+  agentSessionId: TrimmedNonEmptyString,
+});
+export type RelayLinearActivitiesParams = typeof RelayLinearActivitiesParams.Type;
+
+export const RelayLinearActivitiesRequest = Schema.Struct({
+  threadId: ThreadId,
+  activities: Schema.Array(RelayLinearActivity).check(Schema.isMaxLength(20)),
+});
+export type RelayLinearActivitiesRequest = typeof RelayLinearActivitiesRequest.Type;
+
+/** The signed-in Linear account's current access token, for one of the caller's environments. */
+export const RelayLinearUserTokenResponse = Schema.Struct({
+  token: Schema.NullOr(
+    Schema.Struct({
+      accessToken: TrimmedNonEmptyString,
+      /** When to ask again; null when Linear didn't say. */
+      expiresAt: Schema.NullOr(Schema.String),
+      organizationName: Schema.String,
+      linearUserName: Schema.String,
+    }),
+  ),
+});
+export type RelayLinearUserTokenResponse = typeof RelayLinearUserTokenResponse.Type;
+
+export const RelayLinearAuthorizeKind = Schema.Literals(["install", "link"]);
+export type RelayLinearAuthorizeKind = typeof RelayLinearAuthorizeKind.Type;
+
+export const RelayLinearAuthorizeRequest = Schema.Struct({
+  /** `install` adds the Otter agent to a workspace (admins); `link` ties your Linear user to an environment. */
+  kind: RelayLinearAuthorizeKind,
+  environmentId: Schema.optional(EnvironmentId),
+});
+export type RelayLinearAuthorizeRequest = typeof RelayLinearAuthorizeRequest.Type;
+
+export const RelayLinearAuthorizeResponse = Schema.Struct({
+  url: TrimmedNonEmptyString,
+});
+export type RelayLinearAuthorizeResponse = typeof RelayLinearAuthorizeResponse.Type;
+
+export const RelayLinearAccountLink = Schema.Struct({
+  organizationId: TrimmedNonEmptyString,
+  organizationName: TrimmedNonEmptyString,
+  linearUserName: TrimmedNonEmptyString,
+  environmentId: EnvironmentId,
+  /** Whether the Otter agent is installed in this workspace, so delegation works. */
+  agentInstalled: Schema.Boolean,
+  /**
+   * Whether the relay holds this person's Linear sign-in, which their
+   * environments use to read issues and reviews. Absent from older relays.
+   */
+  signedIn: Schema.optional(Schema.Boolean),
+});
+export type RelayLinearAccountLink = typeof RelayLinearAccountLink.Type;
+
+export const RelayLinearStatusResponse = Schema.Struct({
+  /** False when this relay has no Linear app configured; hide the integration. */
+  available: Schema.Boolean,
+  links: Schema.Array(RelayLinearAccountLink),
+});
+export type RelayLinearStatusResponse = typeof RelayLinearStatusResponse.Type;
+
+export const RelayLinearLinkParams = Schema.Struct({
+  organizationId: TrimmedNonEmptyString,
+});
+export type RelayLinearLinkParams = typeof RelayLinearLinkParams.Type;
+
+export const RelayLinearUpdateLinkRequest = Schema.Struct({
+  environmentId: EnvironmentId,
+});
+export type RelayLinearUpdateLinkRequest = typeof RelayLinearUpdateLinkRequest.Type;
+
 export const RelayDeliveryKind = Schema.Literals([
   "live_activity_start",
   "live_activity_update",
@@ -1107,6 +1290,64 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .annotate(OpenApi.Description, "Environment-authenticated activity publication.")
   .middleware(RelayEnvironmentAuth);
 
+const RelayLinearGroup = HttpApiGroup.make("linear")
+  .add(
+    HttpApiEndpoint.get("getLinearStatus", "/v1/client/linear", {
+      headers: RelayBearerRequestHeaders,
+      success: RelayLinearStatusResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "List your Linear account links"),
+    HttpApiEndpoint.post("authorizeLinear", "/v1/client/linear/authorize", {
+      headers: RelayBearerRequestHeaders,
+      payload: RelayLinearAuthorizeRequest,
+      success: RelayLinearAuthorizeResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Start a Linear install or account link"),
+    HttpApiEndpoint.post("updateLinearLink", "/v1/client/linear/links/:organizationId", {
+      headers: RelayBearerRequestHeaders,
+      params: RelayLinearLinkParams,
+      payload: RelayLinearUpdateLinkRequest,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Choose the environment delegated issues run on"),
+    HttpApiEndpoint.delete("unlinkLinear", "/v1/client/linear/links/:organizationId", {
+      headers: RelayBearerRequestHeaders,
+      params: RelayLinearLinkParams,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Unlink your Linear account"),
+  )
+  .annotate(
+    OpenApi.Description,
+    "Linear agent integration: link a Linear user to an environment that runs delegated issues.",
+  )
+  .middleware(RelayClientAuth);
+
+const RelayLinearServerGroup = HttpApiGroup.make("linearServer")
+  .add(
+    HttpApiEndpoint.post(
+      "postLinearActivities",
+      "/v1/environments/:environmentId/linear/agent-sessions/:agentSessionId/activities",
+      {
+        params: RelayLinearActivitiesParams,
+        payload: RelayLinearActivitiesRequest,
+        success: RelayOkResponse,
+        error: [RelayAuthInvalidError, RelayInternalError],
+      },
+    ).annotate(OpenApi.Summary, "Mirror a delegated thread's progress into Linear"),
+    HttpApiEndpoint.post(
+      "getLinearUserToken",
+      "/v1/environments/:environmentId/linear/user-token",
+      {
+        params: Schema.Struct({ environmentId: EnvironmentId }),
+        success: RelayLinearUserTokenResponse,
+        error: [RelayAuthInvalidError, RelayInternalError],
+      },
+    ).annotate(OpenApi.Summary, "Read Linear as the person who linked their account"),
+  )
+  .annotate(OpenApi.Description, "Environment-authenticated Linear agent session updates.")
+  .middleware(RelayEnvironmentAuth);
+
 export const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
@@ -1116,6 +1357,8 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayTokenGroup,
     RelayDpopClientGroup,
     RelayServerGroup,
+    RelayLinearGroup,
+    RelayLinearServerGroup,
   )
   .annotate(OpenApi.Title, "T3 Code Relay API")
   .annotate(OpenApi.Version, "1.0.0")

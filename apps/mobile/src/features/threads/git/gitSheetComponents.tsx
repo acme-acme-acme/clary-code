@@ -86,6 +86,8 @@ export function SheetListRow(props: {
   readonly icon: ComponentProps<typeof SymbolView>["name"];
   readonly title: string;
   readonly subtitle?: string | null;
+  /** Small status dot leading the subtitle, e.g. a Linear workflow state color. */
+  readonly subtitleDotColor?: string | null;
   readonly disabled?: boolean;
   readonly onPress: () => void;
 }) {
@@ -107,7 +109,17 @@ export function SheetListRow(props: {
         <Text className="text-foreground text-base android:font-t3-medium ios:font-t3-bold">
           {props.title}
         </Text>
-        {props.subtitle ? (
+        {props.subtitle && props.subtitleDotColor ? (
+          <View className="flex-row items-center gap-1.5">
+            <View
+              className="size-2 rounded-full"
+              style={{ backgroundColor: props.subtitleDotColor }}
+            />
+            <Text className="flex-1 text-foreground-muted text-xs leading-snug">
+              {props.subtitle}
+            </Text>
+          </View>
+        ) : props.subtitle ? (
           <Text className="text-foreground-muted text-xs leading-snug">{props.subtitle}</Text>
         ) : null}
       </View>

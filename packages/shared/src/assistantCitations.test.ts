@@ -9,7 +9,10 @@ import {
   type AssistantCitation,
 } from "@t3tools/contracts";
 import {
+  assistantCitationLabel,
   assistantCitationsToPlainText,
+  linearCitationIssue,
+  linearCitationSourceId,
   collectAssistantCitations,
   expandAssistantCitationsForProvider,
   formatAssistantCitationHref,
@@ -345,5 +348,33 @@ describe("assistant citation references", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+describe("Linear issue quotes", () => {
+  const linearQuote: AssistantCitation = {
+    ...citation,
+    messageId: MessageId.make(linearCitationSourceId("ENG-7", "comment:abc")),
+  };
+
+  it("labels quotes by where they came from and reads them back from a prompt", () => {
+    expect(linearCitationIssue(linearQuote)).toBe("ENG-7");
+    expect(linearCitationIssue(citation)).toBeNull();
+    expect(assistantCitationLabel(citation)).toBe("Assistant quote");
+    const prompt = `See ${serializeAssistantCitation(linearQuote)} and ${serializeAssistantCitation(citation)}`;
+    expect(prompt).toContain("[Linear quote](t3-citation://");
+    expect(collectAssistantCitations(prompt).map((match) => match.citation.messageId)).toEqual([
+      linearQuote.messageId,
+      citation.messageId,
+    ]);
+    expect(renderAssistantCitationsAsText(prompt)).toContain("> Linear quote:");
+  });
+
+  it("tells the provider which quotes came from Linear", () => {
+    const expanded = expandAssistantCitationsForProvider(
+      `See ${serializeAssistantCitation(linearQuote)} and ${serializeAssistantCitation(citation)}`,
+    );
+    expect(expanded).toMatch(/^See \[linear-quote-1\] and \[assistant-quote-2\]/);
+    expect(expanded).toContain("earlier assistant responses and Linear issues");
   });
 });
