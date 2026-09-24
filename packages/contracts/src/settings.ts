@@ -1,3 +1,4 @@
+import { CodeIntelligenceSettings } from "./language.ts";
 import { SshDeviceHostConfigs } from "./device.ts";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
@@ -1255,6 +1256,8 @@ export const ServerSettings = Schema.Struct({
    * when the provider session is prepared. The user's own Device panel is
    * unaffected.
    */
+  /** Language servers for the file and diff editors, keyed by `CodeIntelligenceServerId`. */
+  codeIntelligence: CodeIntelligenceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * Whether this server may install and run T3's device helper processes.
@@ -1617,6 +1620,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
+  codeIntelligence: Schema.optionalKey(CodeIntelligenceSettings),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
