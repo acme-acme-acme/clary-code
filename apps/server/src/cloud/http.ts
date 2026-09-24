@@ -26,6 +26,7 @@ import {
   type RelayEnvironmentMintResponse as RelayEnvironmentMintResponseShape,
   RelayEnvironmentLinkProof,
   RelayEnvironmentLinkProofPayload,
+  type RelayLinearAgentSessionRequest,
   RelayLinkProofRequest,
   RelayManagedEndpointOrigin,
   RelayOkResponse,
@@ -85,6 +86,10 @@ import {
 import * as CliTokenManager from "./CliTokenManager.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import { traceRelayRequest } from "./traceRelayRequest.ts";
+import {
+  handleLinearAgentSessionRequest,
+  launchLinearAgentSession,
+} from "../linear/LinearAgentSessionLauncher.ts";
 import { filterRelayResponse, relayRequestError } from "./relayResponse.ts";
 
 const CLOUD_MINT_NONCE_PREFIX = "cloud-mint-nonce-";
@@ -1063,6 +1068,72 @@ const cloudMintCredentialHandler = Effect.fn("environment.cloud.mintCredential")
   ),
 );
 
+const readCloudSecretString = (
+  secrets: ServerSecretStore.ServerSecretStore["Service"],
+  name: string,
+  missing: () => EnvironmentAuth.ServerAuthInternalError,
+) =>
+  secrets.get(name).pipe(
+    Effect.mapError(() => missing()),
+    Effect.flatMap((bytes) =>
+      Option.isSome(bytes) ? Effect.succeed(bytesToString(bytes.value)) : Effect.fail(missing()),
+    ),
+  );
+
+const isLinearSessionRequestError = Schema.is(
+  Schema.Union([EnvironmentHttpUnauthorizedError, EnvironmentHttpConflictError]),
+);
+
+const linearAgentSessionHandler = (
+  dependencies: CloudHttpDependencies,
+  request: RelayLinearAgentSessionRequest,
+) =>
+  handleLinearAgentSessionRequest(
+    {
+      secrets: dependencies.secrets,
+      environment: dependencies.environment,
+      cloudMintPublicKey: readCloudSecretString(
+        dependencies.secrets,
+        CLOUD_MINT_PUBLIC_KEY,
+        () => new EnvironmentAuth.ServerAuthCloudMintPublicKeyMissingError({}),
+      ),
+      relayIssuer: readCloudSecretString(
+        dependencies.secrets,
+        RELAY_ISSUER_SECRET,
+        () => new EnvironmentAuth.ServerAuthCloudRelayIssuerMissingError({}),
+      ).pipe(
+        Effect.catch(() =>
+          readCloudSecretString(
+            dependencies.secrets,
+            RELAY_URL_SECRET,
+            () => new EnvironmentAuth.ServerAuthCloudRelayIssuerMissingError({}),
+          ),
+        ),
+      ),
+      linkedCloudUserId: readInstalledCloudUserId(dependencies.secrets),
+      isValidProofWindow: hasBoundedCloudProofLifetime,
+      consumeReplayGuards: (names, value) =>
+        consumeCloudReplayGuards({ secrets: dependencies.secrets, names, value }),
+      launch: launchLinearAgentSession,
+    },
+    request,
+  ).pipe(
+    Effect.tap(() => appendCloudCredentialResponseHeaders),
+    Effect.catch(
+      (
+        error,
+      ): Effect.Effect<
+        never,
+        | EnvironmentHttpUnauthorizedError
+        | EnvironmentHttpConflictError
+        | EnvironmentHttpInternalServerError
+      > =>
+        isLinearSessionRequestError(error)
+          ? Effect.fail(error)
+          : failEnvironmentCloudInternalError("Could not start the delegated Linear issue.")(error),
+    ),
+  );
+
 export const connectHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "connect",
@@ -1078,6 +1149,9 @@ export const connectHttpApiLayer = HttpApiBuilder.group(
       .handle("mintCredential", ({ payload }) => cloudMintCredentialHandler(dependencies, payload))
       .handle("t3MintCredential", ({ payload }) =>
         traceRelayRequest(cloudMintCredentialHandler(dependencies, payload)),
+      )
+      .handle("linearAgentSession", ({ payload }) =>
+        traceRelayRequest(linearAgentSessionHandler(dependencies, payload)),
       );
   }),
 );

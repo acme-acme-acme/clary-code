@@ -1017,3 +1017,32 @@ export const unlinkThreadPullRequest = Effect.fn("EnvironmentCommands.unlinkThre
     });
   },
 );
+
+export type LinkThreadLinearIssueInput = Omit<
+  Extract<OrchestrationV2Command, { type: "thread.linear-issue.link" }>,
+  "type" | "commandId"
+> &
+  CommandMetadata;
+export type UnlinkThreadLinearIssueInput = Omit<
+  Extract<OrchestrationV2Command, { type: "thread.linear-issue.unlink" }>,
+  "type" | "commandId"
+> &
+  CommandMetadata;
+export const linkThreadLinearIssue = Effect.fn("EnvironmentCommands.linkThreadLinearIssue")(
+  function* (input: LinkThreadLinearIssueInput) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.linear-issue.link",
+      commandId: yield* allocateCommandId(input),
+    });
+  },
+);
+export const unlinkThreadLinearIssue = Effect.fn("EnvironmentCommands.unlinkThreadLinearIssue")(
+  function* (input: UnlinkThreadLinearIssueInput) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.linear-issue.unlink",
+      commandId: yield* allocateCommandId(input),
+    });
+  },
+);

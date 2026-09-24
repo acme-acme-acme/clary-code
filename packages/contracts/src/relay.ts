@@ -861,6 +861,101 @@ export const RelayEnvironmentMintResponse = Schema.Struct({
 });
 export type RelayEnvironmentMintResponse = typeof RelayEnvironmentMintResponse.Type;
 
+/**
+ * An issue delegated to the Otter Linear agent, handed to the linked
+ * environment inside the relay-signed request so the environment can start a
+ * thread without holding any Linear credential.
+ */
+export const RelayLinearAgentSessionIssue = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  identifier: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  teamKey: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type RelayLinearAgentSessionIssue = typeof RelayLinearAgentSessionIssue.Type;
+
+export const RelayLinearAgentSessionProofPayload = Schema.Struct({
+  ...RelaySignedJwtRegisteredClaims,
+  environmentId: EnvironmentId,
+  nonce: TrimmedNonEmptyString,
+  scope: Schema.Array(Schema.Literal("linear:session")),
+  agentSessionId: TrimmedNonEmptyString,
+  issue: RelayLinearAgentSessionIssue,
+  /** Linear's prompt context for the session: the issue, comments, and team guidance. */
+  prompt: Schema.String,
+  creatorName: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type RelayLinearAgentSessionProofPayload = typeof RelayLinearAgentSessionProofPayload.Type;
+
+export const RelayLinearAgentSessionRequest = Schema.Struct({
+  proof: TrimmedNonEmptyString,
+});
+export type RelayLinearAgentSessionRequest = typeof RelayLinearAgentSessionRequest.Type;
+
+/** `no_project`: the environment has no Linear project configured for the issue's team. */
+export const RelayLinearAgentSessionOutcome = Schema.Literals(["launched", "no_project"]);
+export type RelayLinearAgentSessionOutcome = typeof RelayLinearAgentSessionOutcome.Type;
+
+export const RelayLinearAgentSessionResponseProofPayload = Schema.Struct({
+  ...RelaySignedJwtRegisteredClaims,
+  environmentId: EnvironmentId,
+  requestNonce: TrimmedNonEmptyString,
+  outcome: RelayLinearAgentSessionOutcome,
+  threadId: Schema.NullOr(ThreadId),
+});
+export type RelayLinearAgentSessionResponseProofPayload =
+  typeof RelayLinearAgentSessionResponseProofPayload.Type;
+
+export const RelayLinearAgentSessionResponse = Schema.Struct({
+  outcome: RelayLinearAgentSessionOutcome,
+  threadId: Schema.NullOr(ThreadId),
+  proof: TrimmedNonEmptyString,
+});
+export type RelayLinearAgentSessionResponse = typeof RelayLinearAgentSessionResponse.Type;
+
+export const RelayLinearAuthorizeKind = Schema.Literals(["install", "link"]);
+export type RelayLinearAuthorizeKind = typeof RelayLinearAuthorizeKind.Type;
+
+export const RelayLinearAuthorizeRequest = Schema.Struct({
+  /** `install` adds the Otter agent to a workspace (admins); `link` ties your Linear user to an environment. */
+  kind: RelayLinearAuthorizeKind,
+  environmentId: Schema.optional(EnvironmentId),
+});
+export type RelayLinearAuthorizeRequest = typeof RelayLinearAuthorizeRequest.Type;
+
+export const RelayLinearAuthorizeResponse = Schema.Struct({
+  url: TrimmedNonEmptyString,
+});
+export type RelayLinearAuthorizeResponse = typeof RelayLinearAuthorizeResponse.Type;
+
+export const RelayLinearAccountLink = Schema.Struct({
+  organizationId: TrimmedNonEmptyString,
+  organizationName: TrimmedNonEmptyString,
+  linearUserName: TrimmedNonEmptyString,
+  environmentId: EnvironmentId,
+  /** Whether the Otter agent is installed in this workspace, so delegation works. */
+  agentInstalled: Schema.Boolean,
+});
+export type RelayLinearAccountLink = typeof RelayLinearAccountLink.Type;
+
+export const RelayLinearStatusResponse = Schema.Struct({
+  /** False when this relay has no Linear app configured; hide the integration. */
+  available: Schema.Boolean,
+  links: Schema.Array(RelayLinearAccountLink),
+});
+export type RelayLinearStatusResponse = typeof RelayLinearStatusResponse.Type;
+
+export const RelayLinearLinkParams = Schema.Struct({
+  organizationId: TrimmedNonEmptyString,
+});
+export type RelayLinearLinkParams = typeof RelayLinearLinkParams.Type;
+
+export const RelayLinearUpdateLinkRequest = Schema.Struct({
+  environmentId: EnvironmentId,
+});
+export type RelayLinearUpdateLinkRequest = typeof RelayLinearUpdateLinkRequest.Type;
+
 export const RelayDeliveryKind = Schema.Literals([
   "live_activity_start",
   "live_activity_update",
@@ -1107,6 +1202,39 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .annotate(OpenApi.Description, "Environment-authenticated activity publication.")
   .middleware(RelayEnvironmentAuth);
 
+const RelayLinearGroup = HttpApiGroup.make("linear")
+  .add(
+    HttpApiEndpoint.get("getLinearStatus", "/v1/client/linear", {
+      headers: RelayBearerRequestHeaders,
+      success: RelayLinearStatusResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "List your Linear account links"),
+    HttpApiEndpoint.post("authorizeLinear", "/v1/client/linear/authorize", {
+      headers: RelayBearerRequestHeaders,
+      payload: RelayLinearAuthorizeRequest,
+      success: RelayLinearAuthorizeResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Start a Linear install or account link"),
+    HttpApiEndpoint.post("updateLinearLink", "/v1/client/linear/links/:organizationId", {
+      headers: RelayBearerRequestHeaders,
+      params: RelayLinearLinkParams,
+      payload: RelayLinearUpdateLinkRequest,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Choose the environment delegated issues run on"),
+    HttpApiEndpoint.delete("unlinkLinear", "/v1/client/linear/links/:organizationId", {
+      headers: RelayBearerRequestHeaders,
+      params: RelayLinearLinkParams,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Unlink your Linear account"),
+  )
+  .annotate(
+    OpenApi.Description,
+    "Linear agent integration: link a Linear user to an environment that runs delegated issues.",
+  )
+  .middleware(RelayClientAuth);
+
 export const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
@@ -1116,6 +1244,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayTokenGroup,
     RelayDpopClientGroup,
     RelayServerGroup,
+    RelayLinearGroup,
   )
   .annotate(OpenApi.Title, "T3 Code Relay API")
   .annotate(OpenApi.Version, "1.0.0")

@@ -607,6 +607,34 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["xcode android studio sdk avd runtime"],
   },
   {
+    id: "linear",
+    title: "Linear",
+    to: "/settings/integrations",
+    searchTerms: ["issues agent delegate otter"],
+    scope: "environment-defaults",
+  },
+  {
+    id: "linear-api-key",
+    title: "Linear API key",
+    to: "/settings/integrations",
+    searchTerms: ["personal token issue status"],
+    scope: "environment-defaults",
+  },
+  {
+    id: "linear-default-project",
+    title: "Default Linear project",
+    to: "/settings/integrations",
+    searchTerms: ["delegated issues agent run project"],
+    scope: "environment-defaults",
+  },
+  {
+    id: "linear-team-projects",
+    title: "Linear team projects",
+    to: "/settings/integrations",
+    searchTerms: ["team key mapping delegated issues project"],
+    scope: "environment-defaults",
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",
@@ -815,6 +843,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Environments",
     to: "/settings/connections",
     searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
+  },
+  {
+    id: "linear-agent",
+    title: "Linear agent",
+    to: "/settings/connections",
+    searchTerms: ["linear account link workspace install delegate issues"],
+    cloudOnly: true,
   },
   {
     id: "load-balancing",

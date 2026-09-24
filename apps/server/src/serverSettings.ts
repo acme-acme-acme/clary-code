@@ -150,6 +150,8 @@ function providerEnvironmentSecretName(input: {
  */
 const USAGE_LIMIT_SOURCE_KEY_REDACTED = "\u2022\u2022\u2022\u2022\u2022\u2022";
 
+const LINEAR_API_KEY_SECRET_NAME = "linear-api-key";
+
 function usageLimitSourceSecretName(sourceId: string): string {
   return `usage-limit-source-${Buffer.from(sourceId, "utf8").toString("base64url")}`;
 }
@@ -190,7 +192,11 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
       },
     ]),
   );
-  return { ...settings, providerInstances, usageLimitSources };
+  const linear = {
+    ...settings.linear,
+    apiKey: settings.linear.apiKey.length > 0 ? USAGE_LIMIT_SOURCE_KEY_REDACTED : "",
+  };
+  return { ...settings, providerInstances, usageLimitSources, linear };
 }
 
 export function applyProviderInstanceMutation(
@@ -821,10 +827,25 @@ const make = Effect.gen(function* () {
           managementKey: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
         };
       }
+      let linear = settings.linear;
+      if (linear.apiKey === USAGE_LIMIT_SOURCE_KEY_REDACTED) {
+        const secret = yield* secretStore
+          .get(LINEAR_API_KEY_SECRET_NAME)
+          .pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            ),
+          );
+        linear = {
+          ...linear,
+          apiKey: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
+        };
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+        linear,
       };
     });
 
@@ -966,11 +987,32 @@ const make = Effect.gen(function* () {
         });
       }
 
+      let linear = next.linear;
+      if (linear.apiKey !== USAGE_LIMIT_SOURCE_KEY_REDACTED) {
+        if (linear.apiKey.length === 0) {
+          if (current.linear.apiKey.length > 0) {
+            changes.push({
+              kind: "remove",
+              secretName: LINEAR_API_KEY_SECRET_NAME,
+              operation: "remove-secret",
+            });
+          }
+        } else {
+          changes.push({
+            kind: "write",
+            secretName: LINEAR_API_KEY_SECRET_NAME,
+            value: textEncoder.encode(linear.apiKey),
+          });
+          linear = { ...linear, apiKey: USAGE_LIMIT_SOURCE_KEY_REDACTED };
+        }
+      }
+
       return {
         settings: {
           ...next,
           providerInstances: providerInstances as ServerSettings["providerInstances"],
           usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+          linear,
         },
         changes,
       };

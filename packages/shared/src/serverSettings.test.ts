@@ -558,6 +558,28 @@ describe("serverSettings helpers", () => {
     expect(Object.keys(removed.usageLimitSources)).toEqual([hubB]);
   });
 
+  it("patches Linear settings per key and replaces the team list as a whole", () => {
+    const engineering = ProjectId.make("engineering");
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      linear: {
+        apiKey: "key",
+        defaultProjectId: engineering,
+        teamProjects: [
+          { teamKey: "ENG", projectId: engineering },
+          { teamKey: "OPS", projectId: engineering },
+        ],
+      },
+    });
+    const next = applyServerSettingsPatch(current, {
+      linear: { teamProjects: [{ teamKey: "OPS", projectId: engineering }] },
+    });
+    expect(next.linear).toEqual({
+      apiKey: "key",
+      defaultProjectId: engineering,
+      teamProjects: [{ teamKey: "OPS", projectId: engineering }],
+    });
+  });
+
   it("replaces and removes individual usage prices without clobbering other models", () => {
     const prices = { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 };
     const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {

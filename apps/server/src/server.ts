@@ -1,5 +1,6 @@
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
+import * as LinearIssueSyncReactor from "./linear/LinearIssueSyncReactor.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 
@@ -497,6 +498,12 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
       yield* service.start();
     }),
   ).pipe(Layer.provideMerge(PullRequestSyncReactor.layer), Layer.provide(PullRequestServiceLive)),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const service = yield* LinearIssueSyncReactor.LinearIssueSyncReactor;
+      yield* service.start();
+    }),
+  ).pipe(Layer.provideMerge(LinearIssueSyncReactor.layer)),
   // Subscribes to `account.rate-limits.updated` so usage bars track live
   // telemetry instead of waiting for the next status probe.
   ProviderUsageLimitsIngestionLive,
