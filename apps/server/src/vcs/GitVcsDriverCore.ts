@@ -2666,7 +2666,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
       }),
     );
-    if (!repository?.worktreeRoot) return { commits: [] };
+    if (!repository?.worktreeRoot) return { commits: [], baseRef: null, truncated: false };
     const cwd = repository.worktreeRoot;
     const branch = repository.currentBranch;
     const baseRef =
@@ -2675,27 +2675,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ? yield* resolveBaseBranchForNoUpstream(cwd, branch).pipe(Effect.orElseSucceed(() => null))
         : null);
     // Without a base there is no branch to scope commits to.
-    if (!baseRef) return { commits: [] };
+    if (!baseRef) return { commits: [], baseRef: null, truncated: false };
     const result = yield* executeGit(
       "GitVcsDriver.listReviewCommits",
       cwd,
-      // Unit and record separators cannot appear in a subject.
+      // Unit and record separators cannot appear in a subject or author name.
       [
         "log",
         "--no-color",
-        "--format=%H%x1f%s%x1f%aI%x1e",
-        `--max-count=${REVIEW_COMMITS_LIMIT}`,
+        "--format=%H%x1f%s%x1f%an%x1f%aI%x1e",
+        // One past the limit tells a full list from a cut-off one.
+        `--max-count=${REVIEW_COMMITS_LIMIT + 1}`,
         `${baseRef}..HEAD`,
         "--",
       ],
       { allowNonZeroExit: true },
     );
-    if (result.exitCode !== 0) return { commits: [] };
+    if (result.exitCode !== 0) return { commits: [], baseRef, truncated: false };
+    const commits = result.stdout.split("\x1e").flatMap((record) => {
+      const [sha, subject = "", authorName = "", authoredAt = ""] = record.trim().split("\x1f");
+      return sha ? [{ sha, subject, authorName, authoredAt }] : [];
+    });
     return {
-      commits: result.stdout.split("\x1e").flatMap((record) => {
-        const [sha, subject = "", authoredAt = ""] = record.trim().split("\x1f");
-        return sha ? [{ sha, subject, authoredAt }] : [];
-      }),
+      commits: commits.slice(0, REVIEW_COMMITS_LIMIT),
+      baseRef,
+      truncated: commits.length > REVIEW_COMMITS_LIMIT,
     };
   });
 
