@@ -17,6 +17,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as HttpApiScalar from "effect/unstable/httpapi/HttpApiScalar";
 
 import { RelayApi } from "@t3tools/contracts/relay";
+import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 
 import {
   clientApi,
@@ -53,7 +54,10 @@ import {
   RelayApnsDeliveryQueue,
   RelayFcmDeliveryQueue,
   RelayFcmDeliveryDeadLetterQueue,
+  RelayLinearEventQueue,
 } from "./queues.ts";
+import * as LinearIntegration from "./linear/LinearIntegration.ts";
+import { linearApi, linearRoutes, linearServerApi } from "./linear/LinearApi.ts";
 import * as WebCrypto from "./WebCrypto.ts";
 import * as FcmAssertionSigner from "./agentActivity/FcmAssertionSigner.ts";
 import * as FcmClient from "./agentActivity/FcmClient.ts";
@@ -105,12 +109,16 @@ const relayApiLayer = Layer.mergeAll(
   tokenApi,
   dpopClientApi,
   serverApi,
+  linearApi,
+  linearServerApi,
 );
 
 const CloudMintKeyPair = Alchemy.KeyPair("CloudMintKeyPair");
 const ApnsDeliveryJobSigningSecret = Alchemy.makeRandom("ApnsDeliveryJobSigningSecret", {
   bytes: 32,
 });
+const LinearTokenSealingKey = Alchemy.makeRandom("LinearTokenSealingKey", { bytes: 32 });
+const LinearOAuthStateSigningKey = Alchemy.makeRandom("LinearOAuthStateSigningKey", { bytes: 32 });
 
 export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
@@ -137,10 +145,13 @@ export const ApiLive = Api.make(
     const apnsDeliveryDeadLetterQueue = yield* RelayApnsDeliveryDeadLetterQueue;
     const fcmDeliveryQueue = yield* RelayFcmDeliveryQueue;
     const fcmDeliveryDeadLetterQueue = yield* RelayFcmDeliveryDeadLetterQueue;
+    const linearEventQueue = yield* RelayLinearEventQueue;
     const cloudMintKeyPair = yield* CloudMintKeyPair;
     const relayApiZone = yield* RelayApiZone;
     const managedEndpointZone = yield* ManagedEndpointZone;
     const randomApnsDeliveryJobSigningSecret = yield* ApnsDeliveryJobSigningSecret;
+    const randomLinearTokenSealingKey = yield* LinearTokenSealingKey;
+    const randomLinearOAuthStateSigningKey = yield* LinearOAuthStateSigningKey;
     const observability = yield* RelayObservability;
 
     //
@@ -165,6 +176,30 @@ export const ApiLive = Api.make(
     const apnsDeliveryJobSigningSecret = yield* randomApnsDeliveryJobSigningSecret;
     const apnsDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(apnsDeliveryQueue);
     const fcmDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(fcmDeliveryQueue);
+    const linearEventQueueSender = yield* Cloudflare.Queues.WriteQueue(linearEventQueue);
+    // The Linear agent app is optional: without its client id the integration reports unavailable.
+    const linearClientId = Option.getOrUndefined(
+      Option.filter(
+        yield* Config.option(Config.String("LINEAR_CLIENT_ID")),
+        (value) => value.trim().length > 0,
+      ),
+    );
+    const linearClientSecret = yield* Config.Redacted("LINEAR_CLIENT_SECRET").pipe(
+      Config.withDefault(Redacted.make("")),
+    );
+    const linearWebhookSecret = yield* Config.Redacted("LINEAR_WEBHOOK_SECRET").pipe(
+      Config.withDefault(Redacted.make("")),
+    );
+    // An unset repository variable arrives as an empty string, not a missing key.
+    const hostedAppUrl = Option.getOrElse(
+      Option.filter(
+        yield* Config.option(Config.String("HOSTED_APP_URL")),
+        (value) => value.trim().length > 0,
+      ),
+      () => DEFAULT_HOSTED_APP_URL,
+    );
+    const linearTokenSealingKey = yield* randomLinearTokenSealingKey;
+    const linearOAuthStateSigningKey = yield* randomLinearOAuthStateSigningKey;
 
     const axiomDatasetName = yield* observability.traces.name;
     const axiomIngestToken = yield* observability.workerIngestToken.token;
@@ -205,6 +240,17 @@ export const ApiLive = Api.make(
         managedEndpointBaseDomain: yield* managedEndpointZoneName,
         managedEndpointNamespace: stage,
         managedEndpointCleanupMode,
+        linear:
+          linearClientId === undefined
+            ? undefined
+            : {
+                clientId: linearClientId,
+                clientSecret: linearClientSecret,
+                webhookSecret: linearWebhookSecret,
+                tokenSealingKey: yield* linearTokenSealingKey,
+                stateSigningKey: yield* linearOAuthStateSigningKey,
+                hostedAppUrl,
+              },
       });
     });
 
@@ -278,11 +324,23 @@ export const ApiLive = Api.make(
       Layer.provideMerge(webcryptoLayer),
     );
 
+    const linearRuntimeLayer = LinearIntegration.layer.pipe(
+      Layer.provide(
+        Layer.succeed(LinearIntegration.LinearEventQueueSender, {
+          send: (body) =>
+            linearEventQueueSender
+              .send(body)
+              .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+        }),
+      ),
+      Layer.provideMerge(runtimeLayer),
+    );
+
     const appLayer = relayApiLayer.pipe(
       Layer.provideMerge(relayClientAuthLayer),
       Layer.provideMerge(relayDpopClientAuthLayer),
       Layer.provideMerge(relayEnvironmentAuthLayer),
-      Layer.provide(runtimeLayer),
+      Layer.provide(linearRuntimeLayer),
     );
 
     yield* Cloudflare.Queues.consumeQueueMessages<unknown>(
@@ -321,6 +379,25 @@ export const ApiLive = Api.make(
           Stream.withSpan("relay.fcm_delivery_queue.process_batch"),
           Stream.runForEach(FcmDeliveryQueueConsumer.processMessage),
           Effect.provide(runtimeLayer),
+        ),
+    );
+
+    yield* Cloudflare.Queues.consumeQueueMessages<unknown>(
+      linearEventQueue,
+      {
+        batchSize: 5,
+        maxRetries: 2,
+        maxWaitTime: "1 second",
+        retryDelay: "10 seconds",
+      },
+      (stream) =>
+        stream.pipe(
+          Stream.runForEach((message) =>
+            LinearIntegration.LinearIntegration.pipe(
+              Effect.flatMap((linear) => linear.processEvent(message.body)),
+            ),
+          ),
+          Effect.provide(linearRuntimeLayer),
         ),
     );
 
@@ -374,6 +451,7 @@ export const ApiLive = Api.make(
         ),
         HttpApiScalar.layer(RelayApi, { path: "/docs" }),
         relayDocsRedirectRoute,
+        linearRoutes.pipe(Layer.provide(linearRuntimeLayer)),
       ).pipe(Layer.provide([Etag.layerWeak, httpPlatformNotSupportedLayer, relayCors])),
       relayNotFoundRoute,
     ).pipe(

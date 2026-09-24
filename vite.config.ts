@@ -213,7 +213,12 @@ export default defineConfig({
       {
         // Third-party marks (brand logos, the macOS permission panes, Codex's Computer Use
         // mark) must keep their exact colors, so the files that hold them are exempt.
-        files: ["apps/web/src/components/Icons.tsx", "apps/web/src/components/JetBrainsIcons.tsx"],
+        files: [
+          "apps/web/src/components/Icons.tsx",
+          "apps/web/src/components/JetBrainsIcons.tsx",
+          // Linear's status and priority glyphs (Otter Code).
+          "apps/web/src/components/linear/LinearStatusIcon.tsx",
+        ],
         rules: { "shadcn/no-raw-colors": "off" },
       },
       {

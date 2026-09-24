@@ -1,5 +1,6 @@
 import type {
   RepositoryIdentity,
+  ThreadLinearIssueLink,
   SourceControlProviderKind,
   ThreadLinkedPullRequest,
   ThreadPullRequestKey,
@@ -307,20 +308,31 @@ export function resolveThreadPullRequestBadge(
 }
 
 /** Search terms for visible PR links, including the legacy single-link projection. */
+/** Search terms for a thread's linked work: pull requests, then Linear issues. */
 export function threadPullRequestSearchTerms(thread: {
   readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  readonly linearIssues?: ReadonlyArray<ThreadLinearIssueLink> | undefined;
 }): string[] {
+  const linearTerms = (thread.linearIssues ?? []).flatMap((issue) => [
+    issue.identifier,
+    issue.snapshot?.title ?? "",
+  ]);
   if (thread.pullRequests !== undefined && thread.pullRequests.length > 0) {
-    return visibleThreadPullRequests(thread.pullRequests).flatMap((link) => [
-      `#${link.number}`,
-      `${link.repository}#${link.number}`,
-      link.url,
-      link.snapshot?.title ?? "",
-    ]);
+    return [
+      ...visibleThreadPullRequests(thread.pullRequests).flatMap((link) => [
+        `#${link.number}`,
+        `${link.repository}#${link.number}`,
+        link.url,
+        link.snapshot?.title ?? "",
+      ]),
+      ...linearTerms,
+    ];
   }
   const legacy = thread.linkedPullRequest;
-  return legacy ? [`#${legacy.number}`, `${legacy.repository}#${legacy.number}`, legacy.url] : [];
+  return legacy
+    ? [`#${legacy.number}`, `${legacy.repository}#${legacy.number}`, legacy.url, ...linearTerms]
+    : linearTerms;
 }
 
 /** Older V2 event payloads stored one link; an explicit empty array means it was unlinked. */

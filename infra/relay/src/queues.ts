@@ -10,3 +10,5 @@ export const RelayFcmDeliveryQueue = Cloudflare.Queues.Queue("RelayFcmDeliveryQu
 export const RelayFcmDeliveryDeadLetterQueue = Cloudflare.Queues.Queue(
   "RelayFcmDeliveryDeadLetterQueue",
 );
+
+export const RelayLinearEventQueue = Cloudflare.Queues.Queue("RelayLinearEventQueue");

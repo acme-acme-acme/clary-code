@@ -251,6 +251,9 @@ import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavaila
 import { RightPanelTabs } from "./RightPanelTabs";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
+import { ThreadLinearIssuesPanel } from "./linear/ThreadLinearIssuesPanel";
+import { LinearIssueDetailPanel } from "./linear/LinearIssueDetailPanel";
+import { LinkLinearIssueDialogHost } from "./linear/LinkLinearIssueDialog";
 import { useDeviceState } from "~/state/device";
 import { DeviceSetup } from "./device/DeviceSetup";
 import { Dialog } from "./ui/dialog";
@@ -4963,6 +4966,13 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
   }, [activeThreadRef, pullRequestsSurfaceAvailable]);
+  const linearIssuesSurfaceAvailable =
+    isServerThread && serverConfig?.environment.capabilities.threadLinearIssues === true;
+  const linkedLinearIssueCount = ((activeThreadShell ?? activeThread)?.linearIssues ?? []).length;
+  const addLinearIssuesSurface = useCallback(() => {
+    if (!activeThreadRef || !linearIssuesSurfaceAvailable) return;
+    useRightPanelStore.getState().open(activeThreadRef, "linear-issues");
+  }, [activeThreadRef, linearIssuesSurfaceAvailable]);
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
     activeThreadRef?.environmentId ?? null,
   );
@@ -10125,6 +10135,16 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "linear-issues" && activeThreadRef ? (
+      <ThreadLinearIssuesPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "linear-issue" && activeThreadRef ? (
+      <LinearIssueDetailPanel
+        key={renderedRightPanelSurface.id}
+        threadRef={activeThreadRef}
+        identifier={renderedRightPanelSurface.identifier}
+        onBack={linkedLinearIssueCount > 1 ? addLinearIssuesSurface : undefined}
+        onCite={citeAssistantText}
+      />
     ) : renderedRightPanelSurface?.kind === "device" ? (
       <Suspense fallback={null}>
         <DevicePanel
@@ -10957,6 +10977,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddPullRequests={addPullRequestsSurface}
+          onAddLinearIssues={addLinearIssuesSurface}
           onAddDevice={addDeviceSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
@@ -10964,6 +10985,7 @@ export default function ChatView(props: ChatViewProps) {
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
+          linearIssuesAvailable={linearIssuesSurfaceAvailable}
           deviceAvailable={activeThreadRef !== null}
         >
           {rightPanelContent}
@@ -11011,6 +11033,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddPullRequests={addPullRequestsSurface}
+            onAddLinearIssues={addLinearIssuesSurface}
             onAddDevice={addDeviceSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
@@ -11018,6 +11041,7 @@ export default function ChatView(props: ChatViewProps) {
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
             pullRequestsAvailable={pullRequestsSurfaceAvailable}
+            linearIssuesAvailable={linearIssuesSurfaceAvailable}
             deviceAvailable={activeThreadRef !== null}
           >
             {rightPanelContent}
@@ -11064,6 +11088,7 @@ export default function ChatView(props: ChatViewProps) {
         </AlertDialogPopup>
       </AlertDialog>
       <LinkPullRequestDialogHost />
+      <LinkLinearIssueDialogHost />
       {expandedImage && (
         <ExpandedImageDialog
           key={expandedImageKey(expandedImage)}

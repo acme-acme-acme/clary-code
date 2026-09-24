@@ -38,6 +38,27 @@ requests must not follow redirects. These restrictions keep endpoint discovery
 from turning into arbitrary relay egress or exposing another service on the
 environment host.
 
+## Linear delegation rides the same trust
+
+Linear allows one webhook URL per OAuth app, so the relay receives delegated
+agent sessions for every workspace and routes each to the environment the
+delegating Linear user linked. The relay holds the workspace's app token;
+environments never do. A person's own Linear sign-in, kept when they link their
+account, is handed to their environments on request so those read Linear as
+them; the relay refreshes it, because refreshing needs the app's secret. It starts a thread with a relay-signed `linear:session`
+request that carries the issue and prompt inside the proof, and the environment
+checks it exactly like a mint request: relay key, its own audience, its linked
+user, a bounded lifetime, and single-use jti and nonce. The signed response binds
+the thread id to the request nonce. This lets the relay start threads, which is
+more than minting credentials. Treat the relay signing key as able to run agents
+on linked environments. Replies and stops from Linear reach the thread the same
+way, as a `linear:prompt` request. The other direction carries thread content:
+the environment posts the thread's progress to the relay with its environment
+credential, and the relay forwards it to Linear only for a session it recorded
+for that environment and thread. See the
+[launcher](../../apps/server/src/linear/LinearAgentSessionLauncher.ts) and
+[relay integration](../../infra/relay/src/linear/LinearIntegration.ts).
+
 ## A link outlives a connector process
 
 CLI authorization, desired exposure, and a running connector have different

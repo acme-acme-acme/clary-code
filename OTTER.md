@@ -6,32 +6,42 @@ different and how to keep the fork aligned with upstream.
 
 ## How the fork stays in sync
 
-- `main` is the upstream commit recorded in the `upstream-base` branch plus exactly three commits,
-  in this order:
+- `main` is the upstream commit recorded in the `upstream-base` branch plus these commits, in this
+  order:
   1. `chore(otter): brand fork as Otter Code`: names, IDs, domains, icons, relay values, this file,
      and `scripts/otter/`.
-  2. `ci(otter): release Otter Code and sync upstream daily`: release gating and
-     `.github/workflows/otter-sync-upstream.yml`.
-  3. `chore(otter): adapt upstream files (generated)`: output of `.github/scripts/otter-adapt-upstream.sh`.
-     Never edit it by hand. The sync drops and regenerates it after every rebase, so noisy
-     line-level edits to upstream files (runner labels, skipped Windows jobs, the pointer in
-     `AGENTS.md`) never conflict.
-- The upstream ref comes from the `UPSTREAM_REF` repository variable (default: PR #2829's head).
-  Set it to `refs/heads/main` once that PR merges.
-- **Sync:** every day at 08:00 Europe/Berlin, `Sync upstream` rebases the fork commits onto the latest
-  upstream and dispatches a nightly release when upstream moved. On a conflict it opens an issue
-  titled "Upstream sync conflict" with the exact `git rebase --onto` command to resolve it locally.
-- **Changing the fork:** fold edits into the matching commit, never add loose commits or merge
-  upstream:
+  2. `ci(otter): release Otter Code`: release gating and `.github/scripts/otter-adapt-upstream.sh`.
+  3. `feat(otter): Linear integration`: linked Linear issues and the Linear agent app (see
+     [Linear agent app](#linear-agent-app)).
+  4. One squash commit per earlier sync, oldest first, each ending in an `Otter-Sync: <date>`
+     trailer.
+  5. `chore(otter): adapt upstream files (generated)`: output of `.github/scripts/otter-adapt-upstream.sh`.
+     Never edit it by hand. Every sync drops and regenerates it, so noisy line-level edits to
+     upstream files (runner labels, skipped Windows jobs, the pointer in `AGENTS.md`) never
+     conflict.
+  6. The newest sync's squash commit, then anything committed to `main` since.
+- **Upstream** is PR #2829's head (`refs/pull/2829/head` of `pingdotgg/t3code`) while that PR is
+  open, and `main` once it merges.
+- **Changing the fork:** commit to `main` directly. Never merge upstream into it.
+- **Syncing** is done by hand. It moves commits 1–4 and the newest squash onto the new upstream,
+  regenerates the adapt commit, and squash-merges everything committed since the last sync on top
+  through a pull request, which keeps the individual commits:
 
   ```sh
-  git commit --fixup=<commit to amend>
-  GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash origin/upstream-base
-  git push --force-with-lease origin main
+  git fetch origin && git fetch https://github.com/pingdotgg/t3code.git refs/pull/2829/head
+  old=$(git rev-parse origin/upstream-base) new=$(git rev-parse FETCH_HEAD)
+  boundary=$(git log -1 --format=%H -E --grep='^Otter-Sync: ' \
+    --grep='^chore\(otter\): adapt upstream files \(generated\)$' $old..origin/main)
+  git checkout --detach $boundary
+  git rebase -i --onto $new $old   # drop the adapt commit, resolve conflicts
+  .github/scripts/otter-adapt-upstream.sh && git commit -am "chore(otter): adapt upstream files (generated)"
+  git branch -f otter/sync-<date> origin/main && git rebase --onto HEAD $boundary otter/sync-<date>
   ```
 
-  If the generated commit is last and you touched files it changes, drop it
-  (`git reset --hard HEAD~1`), rebase, rerun the script, and commit its output again.
+  Resolve conflicts in favour of upstream's code, dropping fork changes upstream now covers.
+  Push the detached commit as `main` (`--force-with-lease`) and `$new` as `upstream-base`, push
+  the sync branch, open a pull request, and squash-merge it with `Otter-Sync: <date>` as the last
+  line of the commit message. The scheduled `Release` workflow then publishes a nightly.
 
 - **Keep the diff small:** prefer repository variables and secrets over code, and new files
   over edits to upstream files. Leave internal names (`@t3tools/*`, `T3CODE_*`, code identifiers)
@@ -143,6 +153,21 @@ Deliberately not copied:
   compatibility flag (`infra/relay/src/worker.ts`), because tunnels share the relay's zone.
   Without it, the relay's calls to a tunnel fail with Cloudflare 530 and phones report
   `endpoint_request_failed`.
+
+## Linear agent app
+
+Delegating Linear issues to Otter needs one Linear OAuth app owned by Otter, configured on the relay.
+Without it the relay reports Linear as unavailable and clients hide the section.
+
+- Create the app at `linear.app/settings/api/applications/new` with distribution **public**, callback
+  URL `https://relay.otterware.dev/v1/linear/oauth/callback`, webhooks on, webhook URL
+  `https://relay.otterware.dev/v1/linear/webhook`, and the **Agent session events** and
+  **OAuth app revoked** categories.
+- Store the client ID as the `LINEAR_CLIENT_ID` repository variable, and the client secret and webhook
+  signing secret as the `LINEAR_CLIENT_SECRET` and `LINEAR_WEBHOOK_SECRET` secrets in the `production`
+  environment. `HOSTED_APP_URL` is optional and defaults to `https://code.otterware.dev`.
+- The relay generates its own keys for sealing Linear tokens and signing OAuth state. Rotating them
+  forces every workspace to reinstall and every user to relink.
 
 ## Other traps
 

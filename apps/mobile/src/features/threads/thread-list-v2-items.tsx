@@ -35,6 +35,7 @@ import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
+import { presentThreadLinearIssues } from "../../state/thread-linear-issue-presentation";
 import { useThreadPr } from "../../state/use-thread-pr";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
@@ -565,6 +566,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const providerInstance = props.providerInstance;
   const pr = useThreadPr(thread);
+  const linearIssues = useMemo(
+    () => presentThreadLinearIssues(thread.linearIssues),
+    [thread.linearIssues],
+  );
 
   const theme = useUniwindTheme();
   const sidebarPane = props.pane === "sidebar";
@@ -1070,6 +1075,31 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               style={{ fontFamily: MONO_FONT }}
             >
               {pr.kind === "stack" || pr.others > 0 ? pr.label : `#${pr.label}`}
+            </Text>
+          </View>
+        ) : null}
+        {linearIssues ? (
+          <View
+            className="flex-row items-center gap-1"
+            accessibilityLabel={linearIssues.accessibilityLabel}
+          >
+            {linearIssues.stateColor ? (
+              <View
+                className="size-1.5 rounded-full"
+                style={{ backgroundColor: linearIssues.stateColor }}
+              />
+            ) : null}
+            <Text
+              accessibilityLabel={linearIssues.accessibilityLabel}
+              className={cn(
+                "text-xs",
+                selected
+                  ? selectedThreadRowColors.mutedForegroundClassName
+                  : rowAppearance.mutedForegroundClassName,
+              )}
+              style={{ fontFamily: MONO_FONT }}
+            >
+              {linearIssues.label}
             </Text>
           </View>
         ) : null}
