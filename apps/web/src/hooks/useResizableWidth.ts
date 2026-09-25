@@ -15,6 +15,12 @@ const WidthSchema = Schema.Finite;
 export interface UseResizableWidthOptions {
   /** localStorage key the persisted width is stored under. */
   readonly storageKey: string;
+  /**
+   * Shared key for a panel whose width is stored per context (such as per
+   * thread): a context without its own width starts at the last width dragged
+   * anywhere, and every drag updates it.
+   */
+  readonly fallbackStorageKey?: string | undefined;
   readonly defaultWidth: number;
   readonly minWidth: number;
   readonly maxWidth: number;
@@ -47,7 +53,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
   readonly handlers: ResizableWidthHandlers;
 } {
-  const { storageKey, defaultWidth, minWidth, maxWidth, edge } = options;
+  const { storageKey, fallbackStorageKey, defaultWidth, minWidth, maxWidth, edge } = options;
 
   const clamp = useCallback(
     (value: number): number => {
@@ -61,7 +67,9 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   const readWidth = () => {
     if (typeof window === "undefined") return defaultWidth;
     try {
-      const stored = getLocalStorageItem(storageKey, WidthSchema);
+      const stored =
+        getLocalStorageItem(storageKey, WidthSchema) ??
+        (fallbackStorageKey ? getLocalStorageItem(fallbackStorageKey, WidthSchema) : null);
       return clamp(stored ?? defaultWidth);
     } catch (error) {
       console.error("Could not read persisted panel width.", error);
@@ -75,10 +83,10 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   }
 
   const clampedWidth = clamp(widthState.width);
-  const latestOptions = useRef({ clamp, storageKey });
+  const latestOptions = useRef({ clamp, storageKey, fallbackStorageKey });
   useLayoutEffect(() => {
-    latestOptions.current = { clamp, storageKey };
-  }, [clamp, storageKey]);
+    latestOptions.current = { clamp, storageKey, fallbackStorageKey };
+  }, [clamp, storageKey, fallbackStorageKey]);
 
   const handlers = useResizeDrag<HTMLElement>(
     () => ({
@@ -92,7 +100,10 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       finish(finalWidth) {
         // Commit once at drag-end to avoid 60Hz localStorage writes.
         try {
-          setLocalStorageItem(latestOptions.current.storageKey, finalWidth, WidthSchema);
+          const latest = latestOptions.current;
+          setLocalStorageItem(latest.storageKey, finalWidth, WidthSchema);
+          if (latest.fallbackStorageKey)
+            setLocalStorageItem(latest.fallbackStorageKey, finalWidth, WidthSchema);
         } catch (error) {
           console.error("Could not persist panel width.", error);
         }
