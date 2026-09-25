@@ -44,7 +44,7 @@ export interface CodeInfo {
 }
 
 const POPUP_CLASS =
-  "fixed z-50 overflow-hidden rounded-[4px] border border-border bg-popover text-popover-foreground shadow-md";
+  "fixed z-50 overflow-hidden rounded-sm border border-border bg-popover text-popover-foreground shadow-md";
 
 /** Widest a popup may grow from its anchor without leaving the window. */
 const popupStyle = (anchor: PopupAnchor, width: number): CSSProperties => ({
@@ -156,7 +156,7 @@ function SignatureLabel(props: { label: string; parameter: string }) {
   );
 }
 
-const CODE_TEXT = "font-mono text-[12px] leading-[18px]";
+const CODE_TEXT = "font-mono text-xs leading-4.5";
 
 function markdownComponents(language: string | undefined): Components {
   return {
@@ -169,7 +169,7 @@ function markdownComponents(language: string | undefined): Components {
       // Fenced blocks end in a newline; inline code does not.
       if (fence || text.endsWith("\n"))
         return <HighlightedCode code={text.replace(/\n$/, "")} language={fence ?? language} />;
-      return <code className="rounded-[3px] bg-muted px-1 font-mono text-[12px]">{children}</code>;
+      return <code className="rounded-xs bg-muted px-1 font-mono text-xs">{children}</code>;
     },
     hr: () => <hr className="-mx-2 my-1.5 border-border" />,
     a: ({ children, href }) => (
@@ -253,7 +253,7 @@ export function CodeInfoCard(props: {
       role="tooltip"
       className={cn(
         POPUP_CLASS,
-        "w-max text-[13px] leading-5",
+        "w-max text-sm leading-5",
         !props.actions && "pointer-events-none",
       )}
       style={popupStyle(info.anchor, 520)}
@@ -342,7 +342,7 @@ export function CodeLocationList(props: {
         <FileText aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium">{fileName(path)}</span>
         <span className="min-w-0 truncate text-muted-foreground">{directory(path)}</span>
-        <span className="ml-auto shrink-0 rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+        <span className="ml-auto shrink-0 rounded-full bg-muted px-1.5 text-3xs tabular-nums text-muted-foreground">
           {items.length}
         </span>
       </div>

@@ -21,7 +21,7 @@ interface DiagnosticInput {
   source?: string | undefined;
 }
 
-export const codePosition = (position: Position) => ({
+const codePosition = (position: Position) => ({
   line: position.line + 1,
   column: position.character + 1,
 });

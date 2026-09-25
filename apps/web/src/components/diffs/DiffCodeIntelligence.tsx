@@ -45,7 +45,7 @@ import {
 } from "./diffCodeIntelligence.logic";
 
 /** Names shared with the `::highlight()` rules in StyledDiffCodeView's shadow-root CSS. */
-export const DIFF_CODE_HIGHLIGHTS = {
+const DIFF_CODE_HIGHLIGHTS = {
   error: "diff-code-problem-error",
   warning: "diff-code-problem-warning",
   link: "diff-code-definition-link",
@@ -561,9 +561,9 @@ export function DiffCodeIntelligence(props: Props) {
           style={codePopupStyle(locations.anchor, 480)}
         >
           <div className="flex items-center justify-between border-b border-border py-0.5 pr-1 pl-2">
-            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
               {locations.title}
-              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
+              <span className="rounded-full bg-muted px-1.5 text-3xs tabular-nums">
                 {locations.items.length}
               </span>
             </span>

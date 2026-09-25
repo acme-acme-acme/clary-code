@@ -30,7 +30,8 @@
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // The Vite+ web build prerequisite.
-      "ignoreDependencies": ["@effect/platform-node-shared", "@t3tools/web"],
+      // The bundled Python language server, spawned from its resolved path, never imported.
+      "ignoreDependencies": ["@effect/platform-node-shared", "@t3tools/web", "pyright"],
     },
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.

@@ -35,7 +35,6 @@ export const Diagnostic = Schema.Struct({
   severity: Schema.optional(Schema.Number),
   source: Schema.optional(Schema.String),
 });
-export const decodeDiagnostics = Schema.decodeUnknownSync(Schema.Array(Diagnostic));
 export const decodePublishedDiagnostics = Schema.decodeUnknownSync(
   Schema.Struct({
     uri: Schema.String,

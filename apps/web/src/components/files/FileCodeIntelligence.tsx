@@ -610,7 +610,7 @@ export default function FileCodeIntelligence(props: Props) {
             ? "Checking…"
             : `${diagnostics.length} ${diagnostics.length === 1 ? "problem" : "problems"}`}
         </Button>
-        <span className="px-1 text-[10px] text-muted-foreground" role="status">
+        <span className="px-1 text-3xs text-muted-foreground" role="status">
           {error
             ? "Language features unavailable"
             : ready
@@ -640,7 +640,7 @@ export default function FileCodeIntelligence(props: Props) {
             id={listId}
             role="listbox"
             aria-label="Code suggestions"
-            className="max-h-[264px] overflow-auto font-mono text-[12px]"
+            className="max-h-[264px] overflow-auto font-mono text-xs"
           >
             {suggestions.items.map((item, index) => {
               const selected = index === suggestions.selected;
@@ -658,7 +658,7 @@ export default function FileCodeIntelligence(props: Props) {
                   <CompletionKindIcon kind={item.kind} />
                   <CompletionLabel label={item.label} prefix={suggestions.prefix} />
                   {selected ? (
-                    <span className="ml-auto shrink-0 pl-3 font-sans text-[11px] text-muted-foreground">
+                    <span className="ml-auto shrink-0 pl-3 font-sans text-2xs text-muted-foreground">
                       {item.kind}
                     </span>
                   ) : null}
@@ -680,9 +680,9 @@ export default function FileCodeIntelligence(props: Props) {
       {panel ? (
         <div className="max-h-48 shrink-0 overflow-auto border-b border-border/60 text-xs">
           <div className="sticky top-0 z-10 flex items-center justify-between bg-background px-3 py-1">
-            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
               {panel === "problems" ? "Problems" : locations.title}
-              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
+              <span className="rounded-full bg-muted px-1.5 text-3xs tabular-nums">
                 {panel === "problems" ? diagnostics.length : locations.items.length}
               </span>
             </span>

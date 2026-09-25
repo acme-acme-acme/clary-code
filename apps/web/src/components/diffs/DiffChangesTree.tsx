@@ -165,7 +165,7 @@ function CollapsedDirectoryStats({
           additions={additions}
           deletions={deletions}
           layout="inline"
-          className="text-[11px]"
+          className="text-2xs"
         />
       )}
       {/* Holds the status icon's column so totals line up with the files' stats. */}
