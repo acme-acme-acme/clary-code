@@ -3,22 +3,38 @@ import type { RunId, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import type { DiffViewedMark } from "./components/diffs/diffViewed.logic";
 import { resolveStorage } from "./lib/storage";
 
 export type DiffPanelSelection =
   | { kind: "branch"; baseRef: string | null }
   | { kind: "unstaged" }
+  | { kind: "commit"; sha: string }
   | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
 
-const DEFAULT_SELECTION: DiffPanelSelection = { kind: "unstaged" };
+const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
 
 interface DiffPanelStoreState {
   byThreadKey: Record<string, DiffPanelSelection>;
   branchBaseRefByThreadKey: Record<string, string | null>;
+  /** Session only: the file open in the one-file view, by thread, with the scope it belongs to. */
+  openFileByThreadKey: Record<string, { scope: string; path: string }>;
+  /** Files the reader marked viewed, by thread, then review section, then path. */
+  viewedByThreadKey: Record<string, Record<string, Record<string, DiffViewedMark>>>;
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
+  /** Changes the comparison target without leaving the current scope. */
+  setBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
+  openFile: (ref: ScopedThreadRef, scope: string, path: string) => void;
   selectTurn: (ref: ScopedThreadRef, turnId: RunId, filePath?: string) => void;
+  selectCommit: (ref: ScopedThreadRef, sha: string) => void;
   reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
+  setFileViewed: (
+    ref: ScopedThreadRef,
+    sectionId: string,
+    path: string,
+    mark: DiffViewedMark | null,
+  ) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -32,6 +48,8 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     (set) => ({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
+      openFileByThreadKey: {},
+      viewedByThreadKey: {},
       selectGitScope: (ref, scope) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -69,6 +87,36 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             },
           };
         }),
+      setBaseRef: (ref, baseRef) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const normalizedBaseRef = normalizeBaseRef(baseRef);
+          const previous = state.byThreadKey[threadKey];
+          return {
+            byThreadKey:
+              previous?.kind === "branch" || previous === undefined
+                ? {
+                    ...state.byThreadKey,
+                    [threadKey]: { kind: "branch", baseRef: normalizedBaseRef },
+                  }
+                : state.byThreadKey,
+            branchBaseRefByThreadKey: {
+              ...state.branchBaseRefByThreadKey,
+              [threadKey]: normalizedBaseRef,
+            },
+          };
+        }),
+      openFile: (ref, scope, path) =>
+        set((state) => ({
+          openFileByThreadKey: {
+            ...state.openFileByThreadKey,
+            [scopedThreadKey(ref)]: { scope, path },
+          },
+        })),
+      selectCommit: (ref, sha) =>
+        set((state) => ({
+          byThreadKey: { ...state.byThreadKey, [scopedThreadKey(ref)]: { kind: "commit", sha } },
+        })),
       selectTurn: (ref, turnId, filePath) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -104,16 +152,39 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             },
           };
         }),
+      setFileViewed: (ref, sectionId, path, mark) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const threadViewed = state.viewedByThreadKey[threadKey] ?? {};
+          const { [path]: _previous, ...sectionViewed } = threadViewed[sectionId] ?? {};
+          return {
+            viewedByThreadKey: {
+              ...state.viewedByThreadKey,
+              [threadKey]: {
+                ...threadViewed,
+                [sectionId]: mark ? { ...sectionViewed, [path]: mark } : sectionViewed,
+              },
+            },
+          };
+        }),
       removeThread: (ref) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
-          if (!(threadKey in state.byThreadKey) && !(threadKey in state.branchBaseRefByThreadKey)) {
+          if (
+            !(threadKey in state.byThreadKey) &&
+            !(threadKey in state.branchBaseRefByThreadKey) &&
+            !(threadKey in state.openFileByThreadKey) &&
+            !(threadKey in state.viewedByThreadKey)
+          ) {
             return state;
           }
           const { [threadKey]: _removed, ...byThreadKey } = state.byThreadKey;
           const { [threadKey]: _removedBaseRef, ...branchBaseRefByThreadKey } =
             state.branchBaseRefByThreadKey;
-          return { byThreadKey, branchBaseRefByThreadKey };
+          const { [threadKey]: _removedOpenFile, ...openFileByThreadKey } =
+            state.openFileByThreadKey;
+          const { [threadKey]: _removedViewed, ...viewedByThreadKey } = state.viewedByThreadKey;
+          return { byThreadKey, branchBaseRefByThreadKey, openFileByThreadKey, viewedByThreadKey };
         }),
     }),
     {
@@ -125,6 +196,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
       partialize: (state) => ({
         byThreadKey: state.byThreadKey,
         branchBaseRefByThreadKey: state.branchBaseRefByThreadKey,
+        viewedByThreadKey: state.viewedByThreadKey,
       }),
     },
   ),
