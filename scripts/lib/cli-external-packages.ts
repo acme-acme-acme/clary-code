@@ -60,7 +60,7 @@ const PACKAGE_RUNTIME_DEPENDENCIES = [
   "undici",
   "@fastify/busboy",
   // tsserver and Pyright run as child processes and load their libraries from disk.
-  "typescript",
+  "typescript-tsserver",
   "pyright",
   // Pyright's optional macOS file watcher.
   "fsevents",

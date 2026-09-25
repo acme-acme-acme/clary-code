@@ -33,7 +33,7 @@ export class TypeScriptSession {
     // Ship a known protocol version. Workspace tsconfig/jsconfig and dependencies
     // still come from cwd; loading arbitrary workspace plugins is unnecessary.
     const tsserver = NodeModule.createRequire(import.meta.url).resolve(
-      "typescript/lib/tsserver.js",
+      "typescript-tsserver/lib/tsserver.js",
     );
     this.child = NodeChildProcess.spawn(
       process.execPath,

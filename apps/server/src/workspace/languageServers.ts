@@ -170,7 +170,9 @@ export async function languageServerStatuses(
     enabled: isLanguageServerEnabled(id, settings),
     command: null,
     path: null,
-    version: bundledVersion(id === "typescript" ? "typescript" : "vscode-json-languageservice"),
+    version: bundledVersion(
+      id === "typescript" ? "typescript-tsserver" : "vscode-json-languageservice",
+    ),
     installHint: null,
   }));
   const external = await Promise.all(
