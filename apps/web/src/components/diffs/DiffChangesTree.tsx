@@ -144,6 +144,36 @@ const DiffChangesFileRow = memo(function DiffChangesFileRow(props: {
   );
 });
 
+/** A collapsed folder's totals, in the spot its files' stats would take. */
+function CollapsedDirectoryStats({
+  files,
+}: {
+  readonly files: ReadonlyArray<DiffChangesTreeFile>;
+}) {
+  let additions = 0;
+  let deletions = 0;
+  for (const file of files) {
+    additions += file.additions;
+    deletions += file.deletions;
+  }
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+      {files.every((file) => file.viewed) ? (
+        <CheckIcon aria-label="All viewed" className="size-3.5 shrink-0" />
+      ) : (
+        <DiffStatLabel
+          additions={additions}
+          deletions={deletions}
+          layout="inline"
+          className="text-[11px]"
+        />
+      )}
+      {/* Holds the status icon's column so totals line up with the files' stats. */}
+      <span aria-hidden className="size-3.5 shrink-0" />
+    </span>
+  );
+}
+
 /**
  * The changed files as a folder tree. A row opens the file's diff; the chevron that replaces its
  * stats on hover holds the rest of the file's actions.
@@ -196,7 +226,7 @@ export function DiffChangesTree(props: {
             role="treeitem"
             aria-expanded={row.expanded}
             onClick={() => toggleDirectory(row.path)}
-            className="relative flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-[13px] text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent/60"
+            className="relative flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-md pr-1.5 text-left text-[13px] text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent/60"
             style={{ paddingLeft: BASE_PADDING_PX + row.depth * INDENT_PX - 4 }}
           >
             <IndentGuides depth={row.depth} />
@@ -211,6 +241,7 @@ export function DiffChangesTree(props: {
               <FolderIcon className="size-3.5 shrink-0" />
             )}
             <span className="min-w-0 truncate font-mono text-xs">{row.segments.join(" / ")}</span>
+            {row.expanded ? null : <CollapsedDirectoryStats files={row.files} />}
           </button>
         ) : (
           <DiffChangesFileRow
