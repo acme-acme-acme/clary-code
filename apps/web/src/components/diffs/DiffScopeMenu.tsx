@@ -50,7 +50,7 @@ function ScopeOption(props: {
 
 function SectionLabel(props: { readonly children: ReactNode }) {
   return (
-    <div className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+    <div className="px-2.5 pt-2 pb-1 text-2xs font-medium text-muted-foreground">
       {props.children}
     </div>
   );

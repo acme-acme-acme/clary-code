@@ -99,7 +99,7 @@ const DiffChangesFileRow = memo(function DiffChangesFileRow(props: {
         type="button"
         onClick={() => actions.onOpenFile(file.filePath)}
         aria-label={`Open diff for ${file.filePath}`}
-        className="flex h-full min-w-0 flex-1 cursor-pointer items-center text-left text-[13px] text-foreground outline-none focus-visible:underline"
+        className="flex h-full min-w-0 flex-1 cursor-pointer items-center text-left text-sm text-foreground outline-none focus-visible:underline"
       >
         <span className={cn("truncate", file.viewed && "text-muted-foreground")}>{props.name}</span>
       </button>
@@ -116,7 +116,7 @@ const DiffChangesFileRow = memo(function DiffChangesFileRow(props: {
             additions={file.additions}
             deletions={file.deletions}
             layout="inline"
-            className="text-[11px]"
+            className="text-2xs"
           />
         )}
         <FileStatusIcon type={file.type} />
@@ -196,7 +196,7 @@ export function DiffChangesTree(props: {
             role="treeitem"
             aria-expanded={row.expanded}
             onClick={() => toggleDirectory(row.path)}
-            className="relative flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-[13px] text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent/60"
+            className="relative flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-sm text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent/60"
             style={{ paddingLeft: BASE_PADDING_PX + row.depth * INDENT_PX - 4 }}
           >
             <IndentGuides depth={row.depth} />

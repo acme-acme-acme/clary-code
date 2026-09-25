@@ -1219,7 +1219,7 @@ export default function DiffPanel({
                               itself; the capture listener above skips labels. */}
                           {routeThreadRef ? (
                             <label
-                              className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-muted-foreground"
+                              className="flex cursor-pointer select-none items-center gap-1.5 text-2xs text-muted-foreground"
                               onClick={(event) => event.stopPropagation()}
                             >
                               <Checkbox
@@ -1230,7 +1230,7 @@ export default function DiffPanel({
                               {changed ? (
                                 <Tooltip>
                                   <TooltipTrigger
-                                    render={<span className="text-amber-600 dark:text-amber-500" />}
+                                    render={<span className="text-warning-foreground" />}
                                   >
                                     Changed
                                   </TooltipTrigger>
@@ -1311,7 +1311,7 @@ export default function DiffPanel({
                         {treeFiles.length} {treeFiles.length === 1 ? "file" : "files"}
                       </span>
                       {viewedFiles.paths.size > 0 ? (
-                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
                           {viewedFiles.paths.size}/{treeFiles.length} viewed
                         </span>
                       ) : (
@@ -1319,7 +1319,7 @@ export default function DiffPanel({
                           additions={diffLineStat.additions}
                           deletions={diffLineStat.deletions}
                           layout="inline"
-                          className="shrink-0 text-[11px]"
+                          className="shrink-0 text-2xs"
                         />
                       )}
                     </div>
