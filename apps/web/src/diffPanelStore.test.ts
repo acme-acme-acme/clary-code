@@ -30,6 +30,20 @@ describe("diffPanelStore", () => {
     expect(useDiffPanelStore.getState().viewedByThreadKey).toEqual({});
   });
 
+  it("keeps the state when the open file is opened again", () => {
+    const store = useDiffPanelStore.getState();
+    store.openFile(THREAD_REF, "turn:1", "src/a.ts");
+    const opened = useDiffPanelStore.getState();
+
+    store.openFile(THREAD_REF, "turn:1", "src/a.ts");
+    expect(useDiffPanelStore.getState()).toBe(opened);
+
+    store.openFile(THREAD_REF, "turn:1", "src/b.ts");
+    expect(Object.values(useDiffPanelStore.getState().openFileByThreadKey)).toEqual([
+      { scope: "turn:1", path: "src/b.ts" },
+    ]);
+  });
+
   it("defaults each thread to all changes without requiring git status", () => {
     expect(
       selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
