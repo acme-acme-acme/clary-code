@@ -11,6 +11,8 @@ export type DiffChangesTreeRow<F> =
       readonly segments: ReadonlyArray<string>;
       readonly depth: number;
       readonly expanded: boolean;
+      /** Every file below the folder, for the totals a collapsed folder shows. */
+      readonly files: ReadonlyArray<F>;
     }
   | {
       readonly kind: "file";
@@ -27,6 +29,13 @@ interface DirectoryNode<F> {
 
 const compareNames = (left: string, right: string) =>
   left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+
+function descendantFiles<F>(node: DirectoryNode<F>): F[] {
+  return [
+    ...node.files.map((entry) => entry.file),
+    ...[...node.directories.values()].flatMap(descendantFiles),
+  ];
+}
 
 function emptyNode<F>(): DirectoryNode<F> {
   return { directories: new Map(), files: [] };
@@ -76,7 +85,14 @@ export function buildDiffChangesTreeRows<F>(
       }
       const path = parentPath ? `${parentPath}/${segments.join("/")}` : segments.join("/");
       const expanded = !collapsedPaths.has(path);
-      rows.push({ kind: "directory", path, segments, depth, expanded });
+      rows.push({
+        kind: "directory",
+        path,
+        segments,
+        depth,
+        expanded,
+        files: descendantFiles(child),
+      });
       if (expanded) visit(child, path, depth + 1);
     }
     for (const entry of node.files.toSorted((left, right) => compareNames(left.name, right.name))) {
