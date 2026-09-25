@@ -106,13 +106,16 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             },
           };
         }),
+      // Reopening the open file keeps the state, so effects that reassert it do not re-render.
       openFile: (ref, scope, path) =>
-        set((state) => ({
-          openFileByThreadKey: {
-            ...state.openFileByThreadKey,
-            [scopedThreadKey(ref)]: { scope, path },
-          },
-        })),
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const current = state.openFileByThreadKey[threadKey];
+          if (current?.scope === scope && current.path === path) return state;
+          return {
+            openFileByThreadKey: { ...state.openFileByThreadKey, [threadKey]: { scope, path } },
+          };
+        }),
       selectCommit: (ref, sha) =>
         set((state) => ({
           byThreadKey: { ...state.byThreadKey, [scopedThreadKey(ref)]: { kind: "commit", sha } },
