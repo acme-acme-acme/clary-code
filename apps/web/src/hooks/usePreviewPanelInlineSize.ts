@@ -7,7 +7,7 @@ export interface PreviewPanelInlineSize {
   readonly handlers: ResizableWidthHandlers;
 }
 
-const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
+export const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
 const PREVIEW_PANEL_MIN_WIDTH = 360;
 /**
  * Upper bound as a fraction of the viewport; only binds on wide screens.
@@ -27,6 +27,8 @@ export function usePreviewPanelInlineSize(
   options: {
     readonly enabled?: boolean | undefined;
     readonly widthStorageKey?: string | undefined;
+    /** Shared width a `widthStorageKey` without its own saved width starts from. */
+    readonly fallbackWidthStorageKey?: string | undefined;
     readonly defaultWidth?: number | undefined;
     /** Use the caller's existing row measurement instead of observing the panel's parent. */
     readonly containerWidth?: number | undefined;
@@ -39,6 +41,7 @@ export function usePreviewPanelInlineSize(
   );
   return useResizableWidth({
     storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
+    fallbackStorageKey: options.fallbackWidthStorageKey,
     defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
     minWidth: PREVIEW_PANEL_MIN_WIDTH,
     maxWidth,
