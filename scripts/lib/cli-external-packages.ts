@@ -47,9 +47,9 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "utf-8-validate",
 ] as const;
 
-// These are Cursor's disk-backed dependency closure. Match package boundaries
-// so "zod" does not also externalize unrelated packages such as zod-to-json-schema.
-const CURSOR_RUNTIME_DEPENDENCIES = [
+// Disk-backed packages matched at package boundaries, so "zod" does not also
+// externalize unrelated packages such as zod-to-json-schema. Most are Cursor's closure.
+const PACKAGE_RUNTIME_DEPENDENCIES = [
   "@bufbuild/protobuf",
   "@connectrpc/connect",
   "@connectrpc/connect-node",
@@ -59,12 +59,17 @@ const CURSOR_RUNTIME_DEPENDENCIES = [
   "zod",
   "undici",
   "@fastify/busboy",
+  // tsserver and Pyright run as child processes and load their libraries from disk.
+  "typescript-tsserver",
+  "pyright",
+  // Pyright's optional macOS file watcher.
+  "fsevents",
 ] as const;
 
 export function isRuntimeExternalCliDependency(id: string): boolean {
   return (
     CLI_RUNTIME_EXTERNAL_PREFIXES.some((prefix) => id.startsWith(prefix)) ||
-    CURSOR_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
+    PACKAGE_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
   );
 }
 
