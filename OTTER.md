@@ -51,7 +51,9 @@ different and how to keep the fork aligned with upstream.
 
   Push the detached commit as `main` (`--force-with-lease`) and `$new` as `upstream-base`, push
   the sync branch, open a pull request, and squash-merge it with `Otter-Sync: <date>` as the last
-  line of the commit message. The scheduled `Release` workflow then publishes a nightly.
+  line of the commit message. Then publish a nightly with
+  `gh workflow run release.yml -f channel=nightly`: scheduled nightlies only release commits ahead
+  of the last nightly tag, and a synced `main` has diverged from it.
 
 - **Keep the diff small:** prefer repository variables and secrets over code, and new files
   over edits to upstream files. Leave internal names (`@t3tools/*`, `T3CODE_*`, code identifiers)
