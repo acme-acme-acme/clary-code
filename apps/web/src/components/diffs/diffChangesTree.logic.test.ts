@@ -54,6 +54,19 @@ describe("buildDiffChangesTreeRows", () => {
     expect(rows[0]).toMatchObject({ expanded: false });
   });
 
+  it("gives a collapsed folder every file below it, for its totals", () => {
+    const rows = buildDiffChangesTreeRows(
+      ["src/a.ts", "src/lib/b.ts", "src/lib/deep/c.ts", "docs/guide.md"],
+      identity,
+      new Set(["src"]),
+    );
+
+    expect(rows.find((row) => row.path === "src")).toMatchObject({
+      expanded: false,
+      files: ["src/a.ts", "src/lib/b.ts", "src/lib/deep/c.ts"],
+    });
+  });
+
   it("sorts numbered names naturally", () => {
     const rows = buildDiffChangesTreeRows(
       ["step10.ts", "step2.ts", "step1.ts"],

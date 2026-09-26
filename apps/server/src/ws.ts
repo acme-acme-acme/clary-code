@@ -1,4 +1,4 @@
-import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import { LanguageServiceError, OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import { OrchestratorV2 } from "./orchestration-v2/Orchestrator.ts";
 import * as NodeCrypto from "node:crypto";
@@ -187,6 +187,8 @@ import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/Atta
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import { WorkspaceLanguageService } from "./workspace/WorkspaceLanguageService.ts";
+import { languageServerStatuses } from "./workspace/languageServers.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -1065,11 +1067,14 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+const isLanguageServiceError = Schema.is(LanguageServiceError);
+
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  workspaceLanguage: WorkspaceLanguageService,
 ) =>
   ServerWsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -2958,6 +2963,41 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.projectsLanguage]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsLanguage,
+            serverSettings.getSettings.pipe(
+              Effect.map((settings) => settings.codeIntelligence),
+              // Unreadable settings must not take code intelligence down with them.
+              Effect.orElseSucceed(() => ({})),
+              Effect.flatMap((codeIntelligence) =>
+                Effect.tryPromise({
+                  try: () => workspaceLanguage.request(input, codeIntelligence),
+                  catch: (error) =>
+                    isLanguageServiceError(error)
+                      ? error
+                      : new LanguageServiceError({
+                          message: error instanceof Error ? error.message : String(error),
+                          resync: false,
+                        }),
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsLanguageServers]: () =>
+          observeRpcEffect(
+            WS_METHODS.projectsLanguageServers,
+            serverSettings.getSettings.pipe(
+              Effect.map((settings) => settings.codeIntelligence),
+              Effect.orElseSucceed(() => ({})),
+              Effect.flatMap((codeIntelligence) =>
+                Effect.promise(() => languageServerStatuses(codeIntelligence)),
+              ),
+              Effect.map((servers) => ({ servers })),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.projectsReadFile]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsReadFile,
@@ -3704,6 +3744,11 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
+        // Language sessions hold unsaved editor buffers and child processes for this connection only.
+        const workspaceLanguage = yield* Effect.acquireRelease(
+          Effect.sync(() => new WorkspaceLanguageService()),
+          (service) => Effect.sync(() => service.dispose()),
+        );
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(ServerWsRpcGroup, { disableTracing: true }).pipe(
@@ -3719,6 +3764,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
+              workspaceLanguage,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
